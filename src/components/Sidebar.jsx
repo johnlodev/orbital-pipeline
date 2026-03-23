@@ -12,7 +12,7 @@ const navItems = [
   { key: 'dashboard', label: '視覺化 Dashboard', icon: ChartPieSlice },
 ];
 
-export default function Sidebar({ currentView, setCurrentView }) {
+export default function Sidebar({ currentView, setCurrentView, onOpenSettings }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -70,6 +70,7 @@ export default function Sidebar({ currentView, setCurrentView }) {
 
         {/* Settings */}
         <button
+          onClick={onOpenSettings}
           className={`flex items-center p-2.5 rounded hover:bg-gray-800 hover:text-white transition-colors group relative w-full mt-2 border-t border-gray-800 pt-3 ${
             collapsed ? 'justify-center px-0' : ''
           }`}

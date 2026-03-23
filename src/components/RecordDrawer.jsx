@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, PencilLine, FloppyDisk } from '@phosphor-icons/react';
+import { useState, useEffect } from 'react';
+import { X, PencilLine, FloppyDisk, Trash } from '@phosphor-icons/react';
 import { dictData } from '../utils/mockData';
 
 const emptyForm = {
@@ -17,8 +17,24 @@ const emptyForm = {
   notes: '',
 };
 
-export default function RecordDrawer({ isOpen, onClose, onSave }) {
+export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns }) {
   const [form, setForm] = useState({ ...emptyForm });
+
+  const isEditMode = !!editingRecord;
+
+  // When editingRecord changes, populate form
+  useEffect(() => {
+    if (editingRecord) {
+      setForm({
+        ...emptyForm,
+        ...editingRecord,
+        quantity: editingRecord.quantity ?? '',
+        amount: editingRecord.amount ?? '',
+      });
+    } else {
+      setForm({ ...emptyForm });
+    }
+  }, [editingRecord]);
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -41,6 +57,12 @@ export default function RecordDrawer({ isOpen, onClose, onSave }) {
     onClose();
   }
 
+  function handleDelete() {
+    if (!editingRecord?.id) return;
+    if (!window.confirm('確定要刪除這筆商機嗎？此操作無法復原。')) return;
+    onDelete?.(editingRecord.id);
+  }
+
   const inputCls =
     'w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none';
   const labelCls =
@@ -56,9 +78,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave }) {
         />
       )}
 
-      {/* Drawer */}
+      {/* Drawer – widened to max-w-4xl */}
       <div
-        className={`fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[75] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+        className={`fixed top-0 right-0 h-full max-w-4xl w-full bg-white shadow-2xl z-[75] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -66,11 +88,11 @@ export default function RecordDrawer({ isOpen, onClose, onSave }) {
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-[#faf9f8] shrink-0">
           <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
             <PencilLine weight="fill" className="text-brand-600" />
-            新增商機需求
+            {isEditMode ? '編輯商機需求' : '新增商機需求'}
           </h2>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-700 transition-colors p-1.5 rounded hover:bg-gray-200"
+            className="text-gray-400 hover:text-gray-700 transition-colors p-1.5 rounded hover:bg-gray-200 cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -241,6 +263,26 @@ export default function RecordDrawer({ isOpen, onClose, onSave }) {
             <div />
           </div>
 
+          {/* Custom Columns */}
+          {customColumns && customColumns.length > 0 && (
+            <div className="border-t border-gray-100 my-2 pt-4">
+              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">自訂欄位</div>
+              <div className="grid grid-cols-2 gap-4">
+                {customColumns.map(col => (
+                  <div key={col.id}>
+                    <label className={labelCls}>{col.name}</label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      value={form[col.id] || ''}
+                      onChange={(e) => set(col.id, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
             <label className={labelCls}>Notes</label>
@@ -253,20 +295,32 @@ export default function RecordDrawer({ isOpen, onClose, onSave }) {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-[#faf9f8] flex justify-end gap-2.5 shrink-0">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded transition-colors border border-gray-300 bg-white"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded shadow-sm transition-colors flex items-center gap-1.5"
-          >
-            <FloppyDisk size={16} /> 儲存
-          </button>
+        {/* Footer – delete (left) + cancel/save (right) */}
+        <div className="px-6 py-4 border-t border-gray-200 bg-[#faf9f8] flex justify-between shrink-0">
+          {isEditMode ? (
+            <button
+              onClick={handleDelete}
+              className="px-4 py-2 text-red-600 text-sm font-medium hover:bg-red-50 rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash size={16} /> 刪除此筆
+            </button>
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-2.5 ml-auto">
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded transition-colors border border-gray-300 bg-white cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <FloppyDisk size={16} /> {isEditMode ? '儲存變更' : '儲存'}
+            </button>
+          </div>
         </div>
       </div>
     </>
