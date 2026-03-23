@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* ===== Orbital Pipeline Theme (from backup_index.html) ===== */
+@theme {
+  /* Fluent Design System Colors */
+  --color-fluent-bg: #faf9f8;
+  --color-fluent-hover: #f3f2f1;
+  --color-fluent-border: #e1dfdd;
+  --color-fluent-text: #323130;
+  --color-fluent-muted: #605e5c;
+
+  /* Microsoft Brand Colors */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-500: #0078d4;
+  --color-brand-600: #005a9e;
+  --color-brand-700: #004578;
+  --color-brand-900: #1e3a8a;
+
+  /* Font Family */
+  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* ===== Global Base Styles ===== */
+body {
+  margin: 0;
+  background-color: var(--color-fluent-bg);
+  color: var(--color-fluent-text);
+  font-family: var(--font-sans);
+}
