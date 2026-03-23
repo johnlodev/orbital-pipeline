@@ -18,7 +18,7 @@
   --color-brand-900: #1e3a8a;
 
   /* Font Family */
-  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+  --font-sans: 'Inter', 'Noto Sans TC', 'Segoe UI', sans-serif;
 }
 
 /* ===== Global Base Styles ===== */

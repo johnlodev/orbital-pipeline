@@ -37,7 +37,7 @@ function TableHeader({ onOpenDrawer }) {
             <Plus size={16} /> 單筆新增
           </button>
           <button className="w-full sm:w-auto bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm">
-            <MicrosoftExcelLogo size={16} /> 智慧匯入 (Excel)
+            <MicrosoftExcelLogo size={16} /> EXCEL 匯入
           </button>
 
           <div className="h-8 w-px bg-gray-200 mx-2 hidden lg:block" />

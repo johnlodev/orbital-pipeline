@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Trash, MagnifyingGlass, Funnel, Columns, CaretUp, CaretDown,
-  Plus, MicrosoftExcelLogo, PencilSimple, X,
+  Plus, MicrosoftExcelLogo, PencilSimple, X, Lock,
 } from '@phosphor-icons/react';
 import { dictData as defaultDictData } from '../utils/mockData';
 import { ProductBadge, StageBadge } from './Badges';
@@ -34,8 +34,28 @@ const USD_RATE = 32;
 // ===================================================================
 // Main Component
 // ===================================================================
-export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns }) {
+export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail }) {
   const dictData = dictionary || defaultDictData;
+
+  // ── RBAC: 權限過濾 ──
+  const isSuperAdmin = currentUserPermissions?.role === 'SuperAdmin';
+  const canCreate = isSuperAdmin || !!currentUserPermissions?.can_create;
+  const canUpdate = isSuperAdmin || !!currentUserPermissions?.can_update;
+  const canDelete = isSuperAdmin || !!currentUserPermissions?.can_delete;
+  const canRead   = isSuperAdmin || !!currentUserPermissions?.can_read;
+  const isGuest = userRole?.role === 'guest' && !canRead;
+
+  // 判斷是否為該筆紀錄的擁有者（SuperAdmin 不受限）
+  function isOwner(row) {
+    if (isSuperAdmin) return true;
+    return row.created_by_email && currentUserEmail && row.created_by_email.toLowerCase() === currentUserEmail.toLowerCase();
+  }
+
+  const rbacData = useMemo(() => {
+    if (isGuest) return [];
+    if (userRole?.role === 'sales') return data.filter(r => r.sales === userRole.code);
+    return data; // PM sees all
+  }, [data, userRole, isGuest]);
 
   function getNameFromDict(dictKey, code) {
     const entry = dictData[dictKey]?.find(d => d.code === code);
@@ -240,7 +260,7 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
 
   // ─── Derived: filtered + sorted data ───
   const filteredData = useMemo(() => {
-    let result = data;
+    let result = rbacData;
     if (activeTab !== '全部') result = result.filter(r => r.reqType === activeTab);
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -272,16 +292,16 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
       });
     }
     return result;
-  }, [data, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterDateStart, filterDateEnd, sortCol, sortAsc]);
+  }, [rbacData, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterDateStart, filterDateEnd, sortCol, sortAsc]);
 
   // Tab badge counts (from full data)
   const tabCounts = useMemo(() => {
     const c = {};
     tabs.forEach(t => {
-      c[t.name] = t.name === '全部' ? data.length : data.filter(r => r.reqType === t.name).length;
+      c[t.name] = t.name === '全部' ? rbacData.length : rbacData.filter(r => r.reqType === t.name).length;
     });
     return c;
-  }, [data, tabs]);
+  }, [rbacData, tabs]);
 
   // KPI
   const totalAmount = useMemo(() => filteredData.reduce((s, r) => s + (r.amount || 0), 0), [filteredData]);
@@ -353,8 +373,8 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
     switch (colKey) {
       case 'reqType': {
         const typeColorMap = {
-          '新購': 'bg-green-50 text-green-700 border-green-200',
-          '增購': 'bg-orange-50 text-orange-700 border-orange-200',
+          '新購': 'bg-teal-50 text-teal-700 border-teal-200',
+          '增購': 'bg-rose-50 text-rose-700 border-rose-200',
         };
         const typeCls = typeColorMap[row.reqType] || 'bg-gray-100 text-gray-700 border-gray-300';
         return (
@@ -388,10 +408,11 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
       case 'notes':
         return (
           <span
-            className="text-xs text-brand-600 hover:text-brand-800 font-medium cursor-pointer truncate hover:underline underline-offset-2"
+            className="text-xs text-brand-600 hover:text-brand-800 font-medium cursor-pointer truncate block max-w-[200px] hover:underline underline-offset-2"
             onClick={() => onEditRecord?.(row)}
+            title={row.notes || ''}
           >
-            {row.notes}
+            {row.notes || '-'}
           </span>
         );
       case 'sales':
@@ -422,21 +443,24 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 text-brand-700 uppercase tracking-wider border border-brand-200">Global View</span>
-              <span className="text-xs text-fluent-muted">整合所有產品線商機</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900">微軟跨線授權需求總表</h1>
+            <h1 className="text-xl font-semibold text-gray-900">微軟商機總表</h1>
           </div>
 
           <div className="flex flex-wrap md:flex-nowrap items-center gap-3 lg:justify-end">
+            {canCreate && (
             <button onClick={onOpenDrawer} className="w-full sm:w-auto bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
               <Plus size={16} /> 單筆新增
             </button>
+            )}
+            {canCreate && (
             <button onClick={onOpenImport} className="w-full sm:w-auto bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
-              <MicrosoftExcelLogo size={16} /> 智慧匯入 (Excel)
+              <MicrosoftExcelLogo size={16} /> EXCEL 匯入
             </button>
+            )}
             <div className="h-8 w-px bg-gray-200 mx-2 hidden lg:block" />
             <div className="text-right hidden lg:block">
-              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">當前篩選商機總額</p>
+              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">預估商機總額</p>
               <div className="flex flex-col items-end">
                 <p className="text-lg font-bold text-brand-600 leading-none">
                   NT$ {totalAmount.toLocaleString()} <span className="text-xs font-medium text-gray-500 ml-0.5">TWD</span>
@@ -559,8 +583,8 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
                 )}
               </div>
 
-              {/* Batch delete */}
-              {selectedIds.size > 0 && (
+              {/* Batch delete (PM only) */}
+              {canDelete && selectedIds.size > 0 && (
                 <button
                   onClick={handleBatchDelete}
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-red-200 rounded text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors shadow-sm cursor-pointer"
@@ -681,7 +705,15 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
                 </tr>
               </thead>
               <tbody className="text-[13px] divide-y divide-fluent-border text-fluent-text bg-white">
-                {pageData.length === 0 ? (
+                {isGuest ? (
+                  <tr>
+                    <td colSpan={visibleColCount + 3} className="px-4 py-16 text-center text-gray-400">
+                      <Lock size={32} className="mx-auto mb-3 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-500">您目前無權限查看資料</p>
+                      <p className="text-xs text-gray-400 mt-1">請聯繫管理員，將您的信箱加入 Sales 或 PM 字典檔。</p>
+                    </td>
+                  </tr>
+                ) : pageData.length === 0 ? (
                   <tr>
                     <td colSpan={visibleColCount + 3} className="px-4 py-12 text-center text-gray-400">
                       <MagnifyingGlass size={28} className="mx-auto mb-2" />
@@ -723,6 +755,7 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
 
                         {/* 固定的操作按鈕欄位 */}
                         <td className="px-2 py-2 text-center text-gray-300 group-hover:text-gray-500 transition-colors" style={{ width: 80 }}>
+                          {canUpdate && isOwner(row) && (
                           <button
                             onClick={() => onEditRecord?.(row)}
                             className="p-1 hover:text-brand-600 cursor-pointer inline-flex"
@@ -730,13 +763,16 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
                           >
                             <PencilSimple size={16} />
                           </button>
-                          <button
-                            onClick={() => onDelete?.(row.id)}
-                            className="p-1 hover:text-red-500 cursor-pointer inline-flex"
-                            title="刪除"
-                          >
-                            <Trash size={16} />
-                          </button>
+                          )}
+                          {canDelete && isOwner(row) && (
+                            <button
+                              onClick={() => onDelete?.(row.id)}
+                              className="p-1 hover:text-red-500 cursor-pointer inline-flex"
+                              title="刪除"
+                            >
+                              <Trash size={16} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

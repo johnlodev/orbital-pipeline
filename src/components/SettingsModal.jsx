@@ -26,13 +26,20 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
   const currentTitle = dictTitles[currentDict] || currentDict;
 
   // --- Handlers ---
+  const hasEmailField = currentDict === 'sales' || currentDict === 'pm';
+
   const addItem = useCallback(() => {
     const label = window.prompt(`請輸入新的 [${currentTitle}] 顯示名稱：`);
     if (!label) return;
     const code = window.prompt('請輸入系統代號 (Code，可留空由系統自定)：', label.substring(0, 2).toUpperCase());
+    const newItem = { label, code: code || label };
+    if (currentDict === 'sales' || currentDict === 'pm') {
+      const email = window.prompt('請輸入此人員的登入信箱 (Email)：', '');
+      newItem.email = email || '';
+    }
     setDictionary(prev => ({
       ...prev,
-      [currentDict]: [...(prev[currentDict] || []), { label, code: code || label }],
+      [currentDict]: [...(prev[currentDict] || []), newItem],
     }));
   }, [currentDict, currentTitle, setDictionary]);
 
@@ -42,10 +49,15 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
     const newLabel = window.prompt('編輯顯示名稱 (Label)：', item.label);
     if (!newLabel) return;
     const newCode = window.prompt('編輯代號 (Code)：', item.code);
+    const updated = { label: newLabel, code: newCode || item.code };
+    if (currentDict === 'sales' || currentDict === 'pm') {
+      const newEmail = window.prompt('編輯登入信箱 (Email)：', item.email || '');
+      updated.email = newEmail || '';
+    }
     setDictionary(prev => {
-      const updated = [...prev[currentDict]];
-      updated[index] = { label: newLabel, code: newCode || item.code };
-      return { ...prev, [currentDict]: updated };
+      const arr = [...prev[currentDict]];
+      arr[index] = { ...arr[index], ...updated };
+      return { ...prev, [currentDict]: arr };
     });
   }, [currentDict, currentItems, setDictionary]);
 
@@ -189,13 +201,14 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
                       <th className="px-4 py-2 w-12 text-center">順序</th>
                       <th className="px-4 py-2">顯示名稱 (Label)</th>
                       <th className="px-4 py-2">系統代碼 (Code)</th>
+                      {hasEmailField && <th className="px-4 py-2">登入信箱 (Email)</th>}
                       <th className="px-4 py-2 text-right">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-gray-700">
                     {currentItems.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">
+                        <td colSpan={hasEmailField ? 5 : 4} className="px-4 py-8 text-center text-gray-400 text-sm">
                           目前沒有任何選項，請點擊上方新增。
                         </td>
                       </tr>
@@ -216,6 +229,7 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
                           </td>
                           <td className="px-4 py-2 font-medium text-gray-800">{item.label}</td>
                           <td className="px-4 py-2 font-mono text-xs text-gray-500">{item.code}</td>
+                          {hasEmailField && <td className="px-4 py-2 text-xs text-gray-500">{item.email || <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold border border-yellow-300">⚠️ 未設定</span>}</td>}
                           <td className="px-4 py-2 text-right w-24">
                             <button
                               onClick={() => editItem(index)}

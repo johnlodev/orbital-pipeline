@@ -87,8 +87,11 @@ function getTopN(obj, n = 5) {
 
 const ntTooltip = { callbacks: { label: (c) => ` NT$ ${c.raw.toLocaleString()}` } };
 
-export default function Dashboard({ data, dictionary }) {
+export default function Dashboard({ data, dictionary, currentUserPermissions }) {
   const dictData = dictionary || defaultDictData;
+  // 嚴格執行勾選邏輯：不論角色，一律依照 checkbox 值
+  const canViewSalesRank = !!currentUserPermissions?.view_sales_rank;
+  const canViewPmDist    = !!currentUserPermissions?.view_pm_dist;
 
   // ── (1) Filter panel toggle ──
   const [isFilterOpen, setIsFilterOpen] = useState(true);
@@ -183,20 +186,20 @@ export default function Dashboard({ data, dictionary }) {
       totalNTM += amt;
       totalQty += qty;
 
-      const typeLabel   = getDictLabel('reqType', row.reqType);
-      const prodLabel   = getDictLabel('product', row.product);
-      const stageLabel  = getDictLabel('stage', row.stage);
-      const salesLabel  = getDictLabel('sales', row.sales);
-      const pmLabel     = getDictLabel('pm', row.pm);
+      const typeLabel   = getDictLabel('reqType', row.reqType) || '未分類';
+      const prodLabel   = getDictLabel('product', row.product) || '未分類';
+      const stageLabel  = getDictLabel('stage', row.stage) || '未分類';
+      const salesLabel  = getDictLabel('sales', row.sales) || '未指定';
+      const pmLabel     = getDictLabel('pm', row.pm) || '未指定';
 
       typeStats[typeLabel]     = (typeStats[typeLabel]   || 0) + amt;
       prodStats[prodLabel]     = (prodStats[prodLabel]   || 0) + amt;
       stageStats[stageLabel]   = (stageStats[stageLabel] || 0) + amt;
       salesStats[salesLabel]   = (salesStats[salesLabel] || 0) + amt;
       pmStats[pmLabel]         = (pmStats[pmLabel]       || 0) + amt;
-      euStats[row.enduser]     = (euStats[row.enduser]   || 0) + amt;
-      partnerStats[row.si]     = (partnerStats[row.si]   || 0) + amt;
-      skuStats[row.sku]        = (skuStats[row.sku]      || 0) + amt;
+      euStats[row.enduser || '未知客戶']     = (euStats[row.enduser || '未知客戶']   || 0) + amt;
+      partnerStats[row.si || '未知代理商']     = (partnerStats[row.si || '未知代理商']   || 0) + amt;
+      skuStats[row.sku || '未指定 SKU']        = (skuStats[row.sku || '未指定 SKU']      || 0) + amt;
 
       const wk = getWeekStart(row.date);
       if (wk) trendStats[wk] = (trendStats[wk] || 0) + amt;
@@ -338,7 +341,11 @@ export default function Dashboard({ data, dictionary }) {
               {showChartMenu && (
                 <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded shadow-lg z-[60] p-2 text-sm max-h-96 overflow-y-auto">
                   <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">勾選以顯示圖表</div>
-                  {CHART_DEFS.map(chart => (
+                  {CHART_DEFS.filter(chart => {
+                    if (chart.id === 'sales' && !canViewSalesRank) return false;
+                    if (chart.id === 'pm' && !canViewPmDist) return false;
+                    return true;
+                  }).map(chart => (
                     <label key={chart.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
                       <input
                         type="checkbox"
@@ -529,7 +536,7 @@ export default function Dashboard({ data, dictionary }) {
           )}
 
           {/* 7. Sales (Vertical Bar) */}
-          {chartVis.sales && (
+          {chartVis.sales && canViewSalesRank && (
             <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
               <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <UsersThree weight="fill" className="text-blue-600 text-lg" /> 業務潛在業績榜 (Sales)
@@ -541,7 +548,7 @@ export default function Dashboard({ data, dictionary }) {
           )}
 
           {/* 8. PM (Vertical Bar → Full Width) */}
-          {chartVis.pm && (
+          {chartVis.pm && canViewPmDist && (
             <div className="bg-white rounded border border-gray-200 p-5 shadow-sm md:col-span-2 xl:col-span-3 transition-all">
               <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <UserCircleGear weight="fill" className="text-emerald-600 text-lg" /> PM 專案負責總額分佈

@@ -39,8 +39,25 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   function handleSave() {
-    if (!form.enduser.trim()) {
-      alert('請填寫 EU（最終客戶）');
+    const required = [
+      { key: 'enduser', label: 'EU' },
+      { key: 'si',      label: 'Partner' },
+      { key: 'reqType', label: 'Type' },
+      { key: 'product', label: 'Cat.' },
+      { key: 'sku',     label: 'SKU' },
+      { key: 'quantity',label: 'QTY' },
+      { key: 'amount',  label: 'NTM' },
+      { key: 'date',    label: 'POD' },
+      { key: 'stage',   label: 'Stage' },
+      { key: 'sales',   label: 'Sales' },
+      { key: 'pm',      label: 'PM' },
+    ];
+    const missing = required.filter(f => {
+      const v = form[f.key];
+      return v === '' || v === null || v === undefined;
+    });
+    if (missing.length > 0) {
+      alert('請填寫所有必填欄位（帶有 * 號的項目）！\n\n缺少：' + missing.map(f => f.label).join(', '));
       return;
     }
     const record = {
@@ -114,7 +131,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               />
             </div>
             <div>
-              <label className={labelCls}>Partner</label>
+              <label className={labelCls}>
+                Partner <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 className={inputCls}
@@ -127,7 +146,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {/* Type / Cat */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Type</label>
+              <label className={labelCls}>
+                Type <span className="text-red-500">*</span>
+              </label>
               <select
                 className={inputCls}
                 value={form.reqType}
@@ -142,7 +163,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               </select>
             </div>
             <div>
-              <label className={labelCls}>Cat.</label>
+              <label className={labelCls}>
+                Cat. <span className="text-red-500">*</span>
+              </label>
               <select
                 className={inputCls}
                 value={form.product}
@@ -161,7 +184,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {/* SKU / QTY */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>SKU</label>
+              <label className={labelCls}>
+                SKU <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 className={inputCls}
@@ -170,7 +195,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               />
             </div>
             <div>
-              <label className={labelCls}>QTY</label>
+              <label className={labelCls}>
+                QTY <span className="text-red-500">*</span>
+              </label>
               <input
                 type="number"
                 className={inputCls}
@@ -184,7 +211,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {/* NTM / POD */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>NTM</label>
+              <label className={labelCls}>
+                NTM <span className="text-red-500">*</span>
+              </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <span className="text-gray-500 text-sm font-medium">NT$</span>
@@ -199,7 +228,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               </div>
             </div>
             <div>
-              <label className={labelCls}>POD</label>
+              <label className={labelCls}>
+                POD <span className="text-red-500">*</span>
+              </label>
               <input
                 type="date"
                 className={inputCls}
@@ -212,7 +243,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {/* Stage / Sales */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Stage</label>
+              <label className={labelCls}>
+                Stage <span className="text-red-500">*</span>
+              </label>
               <select
                 className={inputCls}
                 value={form.stage}
@@ -227,7 +260,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               </select>
             </div>
             <div>
-              <label className={labelCls}>Sales</label>
+              <label className={labelCls}>
+                Sales <span className="text-red-500">*</span>
+              </label>
               <select
                 className={inputCls}
                 value={form.sales}
@@ -246,7 +281,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {/* PM */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>PM</label>
+              <label className={labelCls}>
+                PM <span className="text-red-500">*</span>
+              </label>
               <select
                 className={inputCls}
                 value={form.pm}
