@@ -83,8 +83,15 @@ function AuthenticatedApp({ session }) {
 
       // 將 flat rows 轉成 { category: [{label, code, email, _dbId}] } 結構
       const grouped = {}
+      const customTitles = {} // 自訂類別的顯示名稱 (from __meta__ rows)
       for (const row of data) {
         const cat = row.category === 'reqtype' ? 'reqType' : row.category
+        // __meta__ row 用來存自訂類別的顯示名稱，不放入選項清單
+        if (row.code === '__meta__') {
+          customTitles[cat] = row.label
+          if (!grouped[cat]) grouped[cat] = []
+          continue
+        }
         if (!grouped[cat]) grouped[cat] = []
         grouped[cat].push({
           label: row.label,
@@ -92,6 +99,13 @@ function AuthenticatedApp({ session }) {
           email: row.email || '',
           _dbId: row.id,
         })
+      }
+
+      // 把自訂類別的 _title 掛上去，供 SettingsModal 讀取
+      for (const [cat, title] of Object.entries(customTitles)) {
+        if (grouped[cat]) {
+          grouped[cat]._title = title
+        }
       }
 
       // 確保所有內建 key 都存在（即使 DB 中該類別無資料）

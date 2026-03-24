@@ -129,13 +129,41 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
     }
   }, [currentDict, currentItems, setDictionary, onDictionaryChanged]);
 
-  const addCategory = useCallback(() => {
-    const name = window.prompt('請輸入新字典類別名稱 (例如：地區)：');
-    if (!name) return;
-    const key = 'custom_dict_' + Date.now();
-    setDictionary(prev => ({ ...prev, [key]: Object.assign([], { _title: name }) }));
-    setCurrentDict(key);
-  }, [setDictionary]);
+  const addCategory = useCallback(async () => {
+    const key = window.prompt('請輸入類別英文代碼 (作為系統 key，例如：industry)：');
+    if (!key) return;
+    // 驗證: 僅允許英文小寫、底線、數字
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) {
+      alert('⚠️ 代碼格式不正確！請使用小寫英文開頭，僅可含小寫英文、數字與底線。');
+      return;
+    }
+    if (BUILTIN_TITLES[key] || dictionary[key]) {
+      alert('⚠️ 此代碼已存在，請使用其他名稱。');
+      return;
+    }
+    const title = window.prompt('請輸入類別中文名稱 (例如：產業別)：');
+    if (!title) return;
+
+    setSaving(true);
+    try {
+      // 寫入一筆 __meta__ row 來記錄自訂類別的顯示名稱
+      const { error } = await supabase.from('dictionaries').insert({
+        category: key,
+        code: '__meta__',
+        label: title,
+        sort_order: -1,
+      });
+      if (error) throw error;
+      await onDictionaryChanged?.();
+      setCurrentDict(key);
+      alert(`✅ 已新增字典類別「${title}」`);
+    } catch (err) {
+      console.error('Add category error:', err.message);
+      alert('⚠️ 新增類別失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [dictionary, onDictionaryChanged]);
 
   const deleteCategory = useCallback(async (key) => {
     if (!window.confirm(`警告：確定要刪除「${dictTitles[key]}」字典類別嗎？`)) return;
@@ -227,7 +255,7 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
               <div className="p-3 flex flex-col gap-0.5 overflow-y-auto flex-1">
                 {Object.keys(dictTitles).map(key => {
                   const isActive = key === currentDict;
-                  const isCustom = key.startsWith('custom_dict_');
+                  const isCustom = !BUILTIN_TITLES[key];
                   return (
                     <div key={key} className="flex items-center group relative w-full">
                       <button
