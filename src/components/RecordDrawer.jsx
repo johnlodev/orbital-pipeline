@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { X, PencilLine, FloppyDisk, Trash } from '@phosphor-icons/react';
-import { dictData } from '../utils/mockData';
 
 const emptyForm = {
   enduser: '',
@@ -17,8 +16,10 @@ const emptyForm = {
   notes: '',
 };
 
-export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns }) {
+export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns, dictionary }) {
   const [form, setForm] = useState({ ...emptyForm });
+
+  const dictData = dictionary || {};
 
   const isEditMode = !!editingRecord;
 
@@ -155,7 +156,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 onChange={(e) => set('reqType', e.target.value)}
               >
                 <option value="">請選擇</option>
-                {dictData.reqType.map((d) => (
+                {(dictData.reqType || []).map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.label}
                   </option>
@@ -172,7 +173,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 onChange={(e) => set('product', e.target.value)}
               >
                 <option value="">請選擇</option>
-                {dictData.product.map((d) => (
+                {(dictData.product || []).map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.label}
                   </option>
@@ -252,7 +253,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 onChange={(e) => set('stage', e.target.value)}
               >
                 <option value="">請選擇</option>
-                {dictData.stage.map((d) => (
+                {(dictData.stage || []).map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.label}
                   </option>
@@ -269,7 +270,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 onChange={(e) => set('sales', e.target.value)}
               >
                 <option value="">請選擇</option>
-                {dictData.sales.map((d) => (
+                {(dictData.sales || []).map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.label}
                   </option>
@@ -290,7 +291,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 onChange={(e) => set('pm', e.target.value)}
               >
                 <option value="">請選擇</option>
-                {dictData.pm.map((d) => (
+                {(dictData.pm || []).map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.label}
                   </option>

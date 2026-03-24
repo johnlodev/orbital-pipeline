@@ -356,6 +356,7 @@ function AuthenticatedApp({ session }) {
         onDelete={handleDeleteRecord}
         editingRecord={editingRecord}
         customColumns={customColumns}
+        dictionary={dictionary}
       />
 
       {/* Settings Modal */}
