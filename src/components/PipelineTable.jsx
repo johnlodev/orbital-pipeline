@@ -34,7 +34,7 @@ const USD_RATE = 32;
 // ===================================================================
 // Main Component
 // ===================================================================
-export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail }) {
+export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail }) {
   const dictData = dictionary || defaultDictData;
 
   // ── RBAC: 權限過濾 ──
@@ -364,9 +364,9 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
     const count = selectedIds.size;
     if (count === 0) return;
     if (!window.confirm(`警告：確定要批次刪除這 ${count} 筆商機紀錄嗎？此動作無法復原。`)) return;
-    selectedIds.forEach(id => onDelete(id, true));
+    onBatchDelete([...selectedIds]);
     setSelectedIds(new Set());
-  }, [selectedIds, onDelete]);
+  }, [selectedIds, onBatchDelete]);
 
   // (1) Cell rendering – reqType uses inline <select> styled as badge
   function renderCell(row, colKey) {
@@ -442,7 +442,7 @@ export default function PipelineTable({ data, onDelete, onOpenDrawer, onEditReco
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 text-brand-700 uppercase tracking-wider border border-brand-200">Global View</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 text-brand-700 tracking-wider border border-brand-200">MetaAge | Microsoft</span>
             </div>
             <h1 className="text-xl font-semibold text-gray-900">微軟商機總表</h1>
           </div>

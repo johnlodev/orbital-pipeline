@@ -6,6 +6,9 @@ import {
   Gear,
   SignOut,
   ShieldCheck,
+  LockKey,
+  X,
+  Lock,
 } from '@phosphor-icons/react';
 import { supabase } from '../utils/supabaseClient';
 
@@ -16,9 +19,38 @@ const navItems = [
 
 export default function Sidebar({ currentView, setCurrentView, onOpenSettings, session, isSuperAdmin }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [pwForm, setPwForm] = useState({ oldPw: '', newPw: '', confirmPw: '' });
+  const [pwLoading, setPwLoading] = useState(false);
 
   const userEmail = session?.user?.email || '';
   const displayName = userEmail.split('@')[0] || 'User';
+
+  async function handleChangePassword() {
+    const { oldPw, newPw, confirmPw } = pwForm;
+    if (!oldPw || !newPw || !confirmPw) return alert('請填寫所有欄位');
+    if (newPw !== confirmPw) return alert('新密碼與確認新密碼不一致');
+    if (newPw.length < 6) return alert('新密碼長度至少 6 個字元');
+
+    setPwLoading(true);
+    try {
+      // 驗證原密碼
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email: userEmail, password: oldPw });
+      if (signInErr) throw new Error('原密碼驗證失敗');
+
+      // 更新密碼
+      const { error } = await supabase.auth.updateUser({ password: newPw });
+      if (error) throw error;
+
+      alert('✅ 密碼修改成功！');
+      setPwForm({ oldPw: '', newPw: '', confirmPw: '' });
+      setShowChangePw(false);
+    } catch (err) {
+      alert('⚠️ ' + err.message);
+    } finally {
+      setPwLoading(false);
+    }
+  }
 
   return (
     <aside
@@ -124,14 +156,68 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
         )}
         {!collapsed && (
           <button
+            onClick={() => setShowChangePw(true)}
+            title="修改密碼"
+            className="ml-1 p-1.5 rounded text-slate-400 hover:text-[#0078d4] hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <LockKey size={16} />
+          </button>
+        )}
+        {!collapsed && (
+          <button
             onClick={() => supabase.auth.signOut()}
             title="登出"
-            className="ml-2 p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="ml-1 p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <SignOut size={16} />
           </button>
         )}
       </div>
+
+      {/* Change Password Modal */}
+      {showChangePw && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowChangePw(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-[400px] p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">修改密碼</h2>
+              <button onClick={() => setShowChangePw(false)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {[
+                { key: 'oldPw', label: '原密碼', placeholder: '請輸入原密碼' },
+                { key: 'newPw', label: '新密碼', placeholder: '請輸入新密碼（至少 6 字元）' },
+                { key: 'confirmPw', label: '確認新密碼', placeholder: '再次輸入新密碼' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{f.label}</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                      type="password"
+                      value={pwForm[f.key]}
+                      onChange={e => setPwForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-[#0078d4] focus:ring-2 focus:ring-blue-100 outline-none transition-all text-gray-800"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {pwForm.newPw && pwForm.confirmPw && pwForm.newPw !== pwForm.confirmPw && (
+              <p className="text-xs text-red-500 mt-2">⚠️ 新密碼與確認新密碼不一致</p>
+            )}
+            <button
+              onClick={handleChangePassword}
+              disabled={pwLoading}
+              className="w-full mt-4 py-2.5 bg-[#0078d4] hover:bg-[#106ebe] text-white font-semibold text-sm rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {pwLoading ? '處理中...' : '確認修改'}
+            </button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

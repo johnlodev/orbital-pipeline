@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { EnvelopeSimple, Lock, SignIn, UserPlus } from '@phosphor-icons/react';
+import { EnvelopeSimple, Lock, SignIn, UserPlus, X } from '@phosphor-icons/react';
 import { supabase } from '../utils/supabaseClient';
 import { version } from '../../package.json';
 
@@ -12,6 +12,9 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   // 載入時檢查 localStorage 是否有記住的 Email
   useEffect(() => {
@@ -126,15 +129,24 @@ export default function AuthScreen() {
 
             {/* Remember Me (login only) */}
             {mode === 'login' && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-[#0078d4] focus:ring-blue-200 cursor-pointer"
-                />
-                <span className="text-sm text-gray-600">記住我的 Email</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={e => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-[#0078d4] focus:ring-blue-200 cursor-pointer"
+                  />
+                  <span className="text-sm text-gray-600">記住我的 Email</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setForgotEmail(email); setShowForgot(true); }}
+                  className="text-sm text-gray-400 hover:text-[#0078d4] transition-colors cursor-pointer"
+                >
+                  忘記密碼？
+                </button>
+              </div>
             )}
 
             {/* Whitelist hint for signup */}
@@ -160,6 +172,51 @@ export default function AuthScreen() {
           </p>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowForgot(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-[400px] p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">忘記密碼</h2>
+              <button onClick={() => setShowForgot(false)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">請輸入您的 Email，我們將寄送密碼重設連結至您的信箱。</p>
+            <div className="relative mb-4">
+              <EnvelopeSimple className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="email"
+                value={forgotEmail}
+                onChange={e => setForgotEmail(e.target.value)}
+                placeholder="you@metaage.com.tw"
+                className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-[#0078d4] focus:ring-2 focus:ring-blue-100 outline-none transition-all text-gray-800"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!forgotEmail) return alert('請輸入 Email');
+                setForgotLoading(true);
+                try {
+                  const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail);
+                  if (error) throw error;
+                  alert('✅ 密碼重設信件已寄出，請至信箱查收。');
+                  setShowForgot(false);
+                } catch (err) {
+                  alert('⚠️ 寄送失敗：' + err.message);
+                } finally {
+                  setForgotLoading(false);
+                }
+              }}
+              disabled={forgotLoading}
+              className="w-full py-2.5 bg-[#0078d4] hover:bg-[#106ebe] text-white font-semibold text-sm rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {forgotLoading ? '寄送中...' : '發送重設信件'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

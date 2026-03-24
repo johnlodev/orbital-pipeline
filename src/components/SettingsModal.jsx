@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import {
-  X, Gear, PlusCircle, Plus, PencilSimple, Trash,
+  X, Gear, PlusCircle, Plus, PencilSimple, Trash, SpinnerGap,
 } from '@phosphor-icons/react';
+import { supabase } from '../utils/supabaseClient';
 
 // Default title mapping for built-in dict keys
 const BUILTIN_TITLES = {
@@ -12,8 +13,13 @@ const BUILTIN_TITLES = {
   stage: 'Stage',
 };
 
-export default function SettingsModal({ isOpen, onClose, dictionary, setDictionary }) {
+// DB category key mapping (reqType <-> reqtype)
+const toCategoryDb = (key) => key === 'reqType' ? 'reqtype' : key;
+const fromCategoryDb = (cat) => cat === 'reqtype' ? 'reqType' : cat;
+
+export default function SettingsModal({ isOpen, onClose, dictionary, setDictionary, onDictionaryChanged }) {
   const [currentDict, setCurrentDict] = useState('sales');
+  const [saving, setSaving] = useState(false);
   const dragIdxRef = useRef(-1);
 
   // Derive titles from dictionary keys (built-in + custom)
@@ -25,25 +31,40 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
   const currentItems = dictionary[currentDict] || [];
   const currentTitle = dictTitles[currentDict] || currentDict;
 
-  // --- Handlers ---
+  // --- Handlers (Supabase-backed) ---
   const hasEmailField = currentDict === 'sales' || currentDict === 'pm';
 
-  const addItem = useCallback(() => {
+  const addItem = useCallback(async () => {
     const label = window.prompt(`請輸入新的 [${currentTitle}] 顯示名稱：`);
     if (!label) return;
     const code = window.prompt('請輸入系統代號 (Code，可留空由系統自定)：', label.substring(0, 2).toUpperCase());
-    const newItem = { label, code: code || label };
+    const newItem = { label, code: code || label, email: '' };
     if (currentDict === 'sales' || currentDict === 'pm') {
       const email = window.prompt('請輸入此人員的登入信箱 (Email)：', '');
       newItem.email = email || '';
     }
-    setDictionary(prev => ({
-      ...prev,
-      [currentDict]: [...(prev[currentDict] || []), newItem],
-    }));
-  }, [currentDict, currentTitle, setDictionary]);
+    setSaving(true);
+    try {
+      const maxOrder = currentItems.length;
+      const { error } = await supabase.from('dictionaries').insert({
+        category: toCategoryDb(currentDict),
+        code: newItem.code,
+        label: newItem.label,
+        email: newItem.email,
+        sort_order: maxOrder,
+      });
+      if (error) throw error;
+      await onDictionaryChanged?.();
+      alert('✅ 選項已新增');
+    } catch (err) {
+      console.error('Add item error:', err.message);
+      alert('⚠️ 新增失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [currentDict, currentTitle, currentItems, onDictionaryChanged]);
 
-  const editItem = useCallback((index) => {
+  const editItem = useCallback(async (index) => {
     const item = currentItems[index];
     if (!item) return;
     const newLabel = window.prompt('編輯顯示名稱 (Label)：', item.label);
@@ -54,22 +75,59 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
       const newEmail = window.prompt('編輯登入信箱 (Email)：', item.email || '');
       updated.email = newEmail || '';
     }
-    setDictionary(prev => {
-      const arr = [...prev[currentDict]];
-      arr[index] = { ...arr[index], ...updated };
-      return { ...prev, [currentDict]: arr };
-    });
-  }, [currentDict, currentItems, setDictionary]);
+    if (!item._dbId) {
+      // Legacy local-only item, update state only
+      setDictionary(prev => {
+        const arr = [...prev[currentDict]];
+        arr[index] = { ...arr[index], ...updated };
+        return { ...prev, [currentDict]: arr };
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('dictionaries').update({
+        label: updated.label,
+        code: updated.code,
+        ...(updated.email !== undefined ? { email: updated.email } : {}),
+      }).eq('id', item._dbId);
+      if (error) throw error;
+      await onDictionaryChanged?.();
+      alert('✅ 選項已更新');
+    } catch (err) {
+      console.error('Edit item error:', err.message);
+      alert('⚠️ 更新失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [currentDict, currentItems, setDictionary, onDictionaryChanged]);
 
-  const deleteItem = useCallback((index) => {
+  const deleteItem = useCallback(async (index) => {
     const item = currentItems[index];
     if (!item) return;
     if (!window.confirm(`確定要刪除選項「${item.label}」嗎？`)) return;
-    setDictionary(prev => ({
-      ...prev,
-      [currentDict]: prev[currentDict].filter((_, i) => i !== index),
-    }));
-  }, [currentDict, currentItems, setDictionary]);
+
+    if (!item._dbId) {
+      // Legacy local-only item
+      setDictionary(prev => ({
+        ...prev,
+        [currentDict]: prev[currentDict].filter((_, i) => i !== index),
+      }));
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('dictionaries').delete().eq('id', item._dbId);
+      if (error) throw error;
+      await onDictionaryChanged?.();
+      alert('✅ 選項已刪除');
+    } catch (err) {
+      console.error('Delete item error:', err.message);
+      alert('⚠️ 刪除失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [currentDict, currentItems, setDictionary, onDictionaryChanged]);
 
   const addCategory = useCallback(() => {
     const name = window.prompt('請輸入新字典類別名稱 (例如：地區)：');
@@ -79,24 +137,37 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
     setCurrentDict(key);
   }, [setDictionary]);
 
-  const deleteCategory = useCallback((key) => {
+  const deleteCategory = useCallback(async (key) => {
     if (!window.confirm(`警告：確定要刪除「${dictTitles[key]}」字典類別嗎？`)) return;
-    setDictionary(prev => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('dictionaries').delete().eq('category', toCategoryDb(key));
+      if (error) throw error;
+      await onDictionaryChanged?.();
+    } catch (err) {
+      console.error('Delete category error:', err.message);
+      // Fallback: still remove locally
+      setDictionary(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } finally {
+      setSaving(false);
+    }
     setCurrentDict('sales');
-  }, [dictTitles, setDictionary]);
+  }, [dictTitles, setDictionary, onDictionaryChanged]);
 
-  // --- Drag & Drop reorder ---
+  // --- Drag & Drop reorder (persists to DB) ---
   function handleDragStart(index) {
     dragIdxRef.current = index;
   }
 
-  function handleDrop(targetIndex) {
+  async function handleDrop(targetIndex) {
     const fromIndex = dragIdxRef.current;
     if (fromIndex === -1 || fromIndex === targetIndex) return;
+
+    // Optimistic UI
     setDictionary(prev => {
       const items = [...prev[currentDict]];
       const [moved] = items.splice(fromIndex, 1);
@@ -104,6 +175,19 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
       return { ...prev, [currentDict]: items };
     });
     dragIdxRef.current = -1;
+
+    // Persist new sort_order to DB
+    try {
+      const reordered = [...currentItems];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(targetIndex, 0, moved);
+      const updates = reordered
+        .filter(item => item._dbId)
+        .map((item, i) => supabase.from('dictionaries').update({ sort_order: i }).eq('id', item._dbId));
+      await Promise.all(updates);
+    } catch (err) {
+      console.error('Reorder error:', err.message);
+    }
   }
 
   if (!isOpen) return null;
@@ -254,7 +338,13 @@ export default function SettingsModal({ isOpen, onClose, dictionary, setDictiona
           </div>
 
           {/* ── Footer ── */}
-          <div className="px-6 py-4 border-t border-gray-200 bg-[#faf9f8] rounded-b flex justify-end shrink-0">
+          <div className="px-6 py-4 border-t border-gray-200 bg-[#faf9f8] rounded-b flex items-center justify-between shrink-0">
+            {saving && (
+              <span className="flex items-center gap-1.5 text-xs text-brand-600">
+                <SpinnerGap size={14} className="animate-spin" /> 儲存中...
+              </span>
+            )}
+            {!saving && <span />}
             <button
               onClick={onClose}
               className="px-6 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded shadow-sm transition-colors"

@@ -325,9 +325,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 uppercase tracking-wider border border-green-200">Analytics</span>
-              <span className="text-xs text-gray-500">企業級動態報表中心</span>
+              <span className="text-xs text-gray-500">Microsoft</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900">總表視覺化 Dashboard</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
           </div>
           <div className="flex items-center gap-2">
             {/* Chart visibility dropdown */}
