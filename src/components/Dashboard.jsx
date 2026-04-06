@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { motion, useSpring, useTransform } from 'framer-motion';
+import { USD_EXCHANGE_RATE } from '../utils/constants';
 import {
   CurrencyDollar,
   Target,
@@ -52,17 +54,61 @@ ChartJS.register(
 ChartJS.defaults.font.family = "'Inter', 'Segoe UI', sans-serif";
 ChartJS.defaults.color = '#605e5c';
 
+// ── Number Ticker (animated counter) ──
+function NumberTicker({ value, duration = 1.2 }) {
+  const spring = useSpring(0, { duration: duration * 1000 });
+  const display = useTransform(spring, v => Math.round(v).toLocaleString());
+  const [text, setText] = useState('0');
+
+  useEffect(() => {
+    spring.set(value);
+  }, [value, spring]);
+
+  useEffect(() => {
+    const unsub = display.on('change', v => setText(v));
+    return unsub;
+  }, [display]);
+
+  return <span>{text}</span>;
+}
+
+// ── MetricCard sub-component ──
+function MetricCard({ icon: Icon, iconColor, accentColor, title, prefix, value, suffix, subValue }) {
+  return (
+    <div
+      className={`group relative bg-white rounded-2xl border border-slate-100/80 p-5 shadow-[var(--shadow-soft-xs)] hover:shadow-[var(--shadow-soft-md)] hover:-translate-y-1 transition-[transform,box-shadow] duration-300 ease-out flex flex-col justify-center overflow-hidden cursor-default`}
+    >
+      {/* Accent top bar */}
+      <div className={`absolute top-0 left-0 right-0 h-1 ${accentColor} rounded-t-2xl`} />
+
+      {/* Background icon */}
+      <Icon weight="fill" className={`${iconColor} opacity-[0.07] text-7xl absolute -right-2 -bottom-3 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-[-6deg]`} />
+
+      {/* Content */}
+      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 relative z-10">{title}</p>
+      <p className="text-2xl font-bold text-slate-900 relative z-10 flex items-baseline gap-1 tabular-nums">
+        {prefix && <span className="text-base font-semibold text-slate-500">{prefix}</span>}
+        <NumberTicker value={value} />
+        {suffix && <span className="text-sm font-medium text-slate-400 ml-0.5">{suffix}</span>}
+      </p>
+      {subValue && (
+        <p className="text-[11px] text-slate-400 mt-1.5 relative z-10 font-mono">{subValue}</p>
+      )}
+    </div>
+  );
+}
+
 // 9 chart definitions for visibility toggle
 const CHART_DEFS = [
-  { id: 'trend',   label: '預估結單趨勢 (Trend)' },
-  { id: 'type',    label: '需求類型佔比 (Type)' },
-  { id: 'product', label: '產品線營收佔比 (Cat.)' },
-  { id: 'stage',   label: '各階段轉換漏斗 (Stage)' },
-  { id: 'eu',      label: '貢獻最高客戶 Top 5 (EU)' },
-  { id: 'partner', label: '貢獻最高代理商 (Partner)' },
-  { id: 'sales',   label: '業務潛在業績榜 (Sales)' },
-  { id: 'pm',      label: 'PM 專案負責總額 (PM)' },
-  { id: 'sku',     label: '熱門銷售料號 Top 10 (SKU)' },
+  { id: 'trend',   label: 'Weekly Pipeline Trend' },
+  { id: 'type',    label: '需求類型占比 (Type)' },
+  { id: 'product', label: '產品金額占比 (Cat.)' },
+  { id: 'stage',   label: '階段金額占比 (Stage)' },
+  { id: 'eu',      label: 'Top 5 (EU)' },
+  { id: 'partner', label: 'Top 5 (Partner)' },
+  { id: 'sales',   label: 'Forecast (Sales)' },
+  { id: 'pm',      label: '專案負責總額 (PM)' },
+  { id: 'sku',     label: 'Top 10 (SKU)' },
 ];
 
 // ── helpers ──
@@ -112,6 +158,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const [filterStages, setFilterStages] = useState([]);
   const [filterSales, setFilterSales] = useState([]);
   const [filterPMs, setFilterPMs] = useState([]);
+  const [filterSegments, setFilterSegments] = useState([]);
+  const [filterQuarters, setFilterQuarters] = useState([]);
+  const [filterMonths, setFilterMonths] = useState([]);
 
   // Close chart menu on outside click
   useEffect(() => {
@@ -141,6 +190,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     setFilterStages([]);
     setFilterSales([]);
     setFilterPMs([]);
+    setFilterSegments([]);
+    setFilterQuarters([]);
+    setFilterMonths([]);
   }
 
   function getDictLabel(dictKey, code) {
@@ -169,13 +221,16 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     if (filterStages.length)   result = result.filter(r => filterStages.includes(r.stage));
     if (filterSales.length)    result = result.filter(r => filterSales.includes(r.sales));
     if (filterPMs.length)      result = result.filter(r => filterPMs.includes(r.pm));
+    if (filterSegments.length)  result = result.filter(r => filterSegments.includes(r.segment));
+    if (filterQuarters.length)  result = result.filter(r => filterQuarters.every(q => Number(r[q]) > 0));
+    if (filterMonths.length)    result = result.filter(r => filterMonths.every(m => Number(r[m]) > 0));
     return result;
-  }, [data, searchTerm, dateStart, dateEnd, filterTypes, filterProducts, filterStages, filterSales, filterPMs]);
+  }, [data, searchTerm, dateStart, dateEnd, filterTypes, filterProducts, filterStages, filterSales, filterPMs, filterSegments, filterQuarters, filterMonths]);
 
   // ═══════ KPI & all 9 chart stats ═══════
   const stats = useMemo(() => {
     let totalNTM = 0, totalQty = 0;
-    const typeStats = {}, prodStats = {}, stageStats = {};
+    const typeStats = {}, prodStats = {}, stageStats = {}, segmentStats = {};
     const salesStats = {}, pmStats = {};
     const euStats = {}, partnerStats = {}, skuStats = {};
     const trendStats = {};
@@ -195,6 +250,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       typeStats[typeLabel]     = (typeStats[typeLabel]   || 0) + amt;
       prodStats[prodLabel]     = (prodStats[prodLabel]   || 0) + amt;
       stageStats[stageLabel]   = (stageStats[stageLabel] || 0) + amt;
+
+      const segLabel = row.segment || '未分類';
+      segmentStats[segLabel]   = (segmentStats[segLabel] || 0) + amt;
       salesStats[salesLabel]   = (salesStats[salesLabel] || 0) + amt;
       pmStats[pmLabel]         = (pmStats[pmLabel]       || 0) + amt;
       euStats[row.enduser || '未知客戶']     = (euStats[row.enduser || '未知客戶']   || 0) + amt;
@@ -208,7 +266,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     const totalDeals = filteredData.length;
     const avgDeal = totalDeals > 0 ? Math.round(totalNTM / totalDeals) : 0;
 
-    return { totalNTM, totalDeals, totalQty, avgDeal, typeStats, prodStats, stageStats, salesStats, pmStats, euStats, partnerStats, skuStats, trendStats };
+    return { totalNTM, totalDeals, totalQty, avgDeal, typeStats, prodStats, stageStats, segmentStats, salesStats, pmStats, euStats, partnerStats, skuStats, trendStats };
   }, [filteredData, dictData]);
 
   // ── Shared chart option factories ──
@@ -283,11 +341,13 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     datasets: [{ label: '營收佔比', data: typeLabels.length ? Object.values(stats.typeStats) : [0], backgroundColor: ['#8b5cf6', '#d946ef', '#f43f5e', '#a855f7'], borderWidth: 2, borderColor: '#fff' }],
   };
 
-  // 3. Product (Doughnut)
-  const prodLabels = Object.keys(stats.prodStats);
+  // 3. Product / Segment (Doughnut) — swap when Azure is filtered
+  const isAzureFiltered = filterProducts.includes('Azure');
+  const chartProdLabels = isAzureFiltered ? Object.keys(stats.segmentStats) : Object.keys(stats.prodStats);
+  const chartProdValues = isAzureFiltered ? Object.values(stats.segmentStats) : Object.values(stats.prodStats);
   const prodData = {
-    labels: prodLabels.length ? prodLabels : ['無資料'],
-    datasets: [{ label: '營收佔比', data: prodLabels.length ? Object.values(stats.prodStats) : [0], backgroundColor: ['#14b8a6', '#0ea5e9', '#f59e0b'], borderWidth: 2, borderColor: '#fff' }],
+    labels: chartProdLabels.length ? chartProdLabels : ['無資料'],
+    datasets: [{ label: '營收佔比', data: chartProdLabels.length ? chartProdValues : [0], backgroundColor: ['#14b8a6', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#f97316', '#22c55e'], borderWidth: 2, borderColor: '#fff' }],
   };
 
   // 4. Stage (Horizontal Bar)
@@ -314,13 +374,13 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const topSKU = getTopN(stats.skuStats, 10);
   const skuData = makeBarData(Object.keys(topSKU), Object.values(topSKU), '#ec4899');
 
-  const hasActiveFilters = searchTerm || dateStart || dateEnd || filterTypes.length || filterProducts.length || filterStages.length || filterSales.length || filterPMs.length;
+  const hasActiveFilters = searchTerm || dateStart || dateEnd || filterTypes.length || filterProducts.length || filterStages.length || filterSales.length || filterPMs.length || filterSegments.length || filterQuarters.length || filterMonths.length;
 
   // ═══════ Render ═══════
   return (
     <div className="flex-1 flex flex-col h-full w-full overflow-hidden">
       {/* ── Dashboard Header ── */}
-      <header className="bg-white border-b border-fluent-border px-6 py-4 shrink-0 shadow-sm relative z-30">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-6 py-4 shrink-0 shadow-sm relative z-30">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -377,7 +437,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
         {/* ── Filter Panel ── */}
         {isFilterOpen && (
-          <div className="bg-white rounded border border-gray-200 p-5 mb-6 shadow-sm transition-all duration-300">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 mb-6 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {/* Keyword */}
               <div>
@@ -428,44 +488,90 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
                 </button>
               </div>
             </div>
+
+            {/* Azure Advanced Filters */}
+            {filterProducts.includes('Azure') && (
+              <div className="mt-4 pt-4 border-t border-slate-200/60">
+                <div className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Azure 進階篩選條件
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Segment */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex justify-between">Segment <span className="text-[9px] font-normal text-gray-400">未勾選=全選</span></label>
+                    <DashFilterGroup items={dictData.segment || []} checked={filterSegments} onToggle={v => toggle(v, setFilterSegments)} />
+                  </div>
+                  {/* Quarters */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">季度篩選 (大於 0)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['q1','q2','q3','q4'].map(q => {
+                        const isChecked = filterQuarters.includes(q);
+                        return (
+                          <label key={q} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors border ${isChecked ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}>
+                            <input type="checkbox" checked={isChecked} onChange={() => toggle(q, setFilterQuarters)} className="sr-only" />
+                            {q.toUpperCase()}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* Months */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">月份篩選 (大於 0)</label>
+                    <div className="grid grid-cols-6 gap-1">
+                      {['jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun'].map(m => {
+                        const isChecked = filterMonths.includes(m);
+                        return (
+                          <label key={m} className={`inline-flex items-center justify-center px-1 py-0.5 rounded text-[10px] cursor-pointer transition-colors border ${isChecked ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}>
+                            <input type="checkbox" checked={isChecked} onChange={() => toggle(m, setFilterMonths)} className="sr-only" />
+                            {m.charAt(0).toUpperCase() + m.slice(1)}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded border border-gray-200 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-brand-500 relative overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-brand-500 relative overflow-hidden">
             <CurrencyDollar weight="fill" className="text-brand-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">預估總商機 (NTM)</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10 flex items-baseline gap-1">
               NT$ {stats.totalNTM.toLocaleString()}
-              <span className="text-xs font-medium text-gray-500 ml-1 font-mono">≈ ${Math.round(stats.totalNTM / 30).toLocaleString()} USD</span>
+              <span className="text-xs font-medium text-gray-500 ml-1 font-mono">≈ ${Math.round(stats.totalNTM / USD_EXCHANGE_RATE).toLocaleString()} USD</span>
             </p>
           </div>
-          <div className="bg-white rounded border border-gray-200 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-orange-500 relative overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-orange-500 relative overflow-hidden">
             <Target weight="fill" className="text-orange-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">符合條件案件數</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10">{stats.totalDeals} <span className="text-sm font-medium text-gray-400">件</span></p>
           </div>
-          <div className="bg-white rounded border border-gray-200 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-teal-500 relative overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-teal-500 relative overflow-hidden">
             <Stack weight="fill" className="text-teal-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">授權總數量 (QTY)</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10">{stats.totalQty.toLocaleString()} <span className="text-sm font-medium text-gray-400">套</span></p>
           </div>
-          <div className="bg-white rounded border border-gray-200 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-blue-400 relative overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-blue-400 relative overflow-hidden">
             <Calculator weight="fill" className="text-blue-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">平均案頭金額</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">平均案件金額</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10 flex items-baseline gap-1">
               NT$ {stats.avgDeal.toLocaleString()}
-              <span className="text-xs font-medium text-gray-500 ml-1 font-mono">≈ ${Math.round(stats.avgDeal / 30).toLocaleString()} USD</span>
+              <span className="text-xs font-medium text-gray-500 ml-1 font-mono">≈ ${Math.round(stats.avgDeal / USD_EXCHANGE_RATE).toLocaleString()} USD</span>
             </p>
           </div>
         </div>
 
         {/* ── 1. Trend (Full Width Line) ── */}
         {chartVis.trend && (
-          <div className="bg-white rounded border border-gray-200 p-5 shadow-sm mb-6 transition-all">
-            <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <TrendUp weight="fill" className="text-brand-600 text-lg" /> 預估結單趨勢 (Weekly Pipeline Trend)
+          <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-6 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+            <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <TrendUp weight="fill" className="text-brand-500 text-lg" /> Weekly Pipeline Trend
             </h3>
             <div className="relative w-full h-[250px]">
               <Line data={trendChartData} options={trendOptions} />
@@ -473,13 +579,13 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
           </div>
         )}
 
-        {/* ── 2–9 Charts Grid ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* ── 2–9 Charts Bento Grid ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {/* 2. Type Doughnut */}
           {chartVis.type && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> 需求類型佔比 (Type)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> 需求類型占比 (Type)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Doughnut data={typeData} options={doughnutOptions} />
@@ -489,9 +595,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 3. Product Doughnut */}
           {chartVis.product && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <ChartDonut weight="fill" className="text-teal-600 text-lg" /> 產品線營收佔比 (Cat.)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <ChartDonut weight="fill" className="text-teal-500 text-lg" /> {isAzureFiltered ? 'Azure 類型佔比 (Segment)' : '產品金額占比 (Cat.)'}
               </h3>
               <div className="relative w-full h-[220px]">
                 <Doughnut data={prodData} options={doughnutOptions} />
@@ -501,9 +607,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 4. Stage Funnel (Horizontal Bar) */}
           {chartVis.stage && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm md:col-span-2 xl:col-span-1 transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Funnel weight="fill" className="text-orange-500 text-lg" /> 各階段轉換漏斗 (Stage)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-1 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <Funnel weight="fill" className="text-orange-500 text-lg" /> 階段金額占比 (Stage)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={stageData} options={hBarOpts()} />
@@ -513,9 +619,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 5. Top 5 EU (Horizontal Bar) */}
           {chartVis.eu && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Buildings weight="fill" className="text-blue-500 text-lg" /> 貢獻最高客戶 Top 5 (EU)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 (EU)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={euData} options={hBarOpts()} />
@@ -525,9 +631,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 6. Top 5 Partner (Horizontal Bar) */}
           {chartVis.partner && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Handshake weight="fill" className="text-indigo-500 text-lg" /> 貢獻最高代理商 Top 5 (Partner)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 5 (Partner)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={partnerData} options={hBarOpts()} />
@@ -537,9 +643,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 7. Sales (Vertical Bar) */}
           {chartVis.sales && canViewSalesRank && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <UsersThree weight="fill" className="text-blue-600 text-lg" /> 業務潛在業績榜 (Sales)
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <UsersThree weight="fill" className="text-blue-600 text-lg" /> Forecast (Sales)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={salesData} options={vBarOpts()} />
@@ -549,9 +655,9 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 8. PM (Vertical Bar → Full Width) */}
           {chartVis.pm && canViewPmDist && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm md:col-span-2 xl:col-span-3 transition-all">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <UserCircleGear weight="fill" className="text-emerald-600 text-lg" /> PM 專案負責總額分佈
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <UserCircleGear weight="fill" className="text-emerald-600 text-lg" /> 專案負責總額 (PM)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={pmData} options={vBarOpts()} />
@@ -561,12 +667,12 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
           {/* 9. SKU Top 10 (Horizontal Bar → Full Width) */}
           {chartVis.sku && (
-            <div className="bg-white rounded border border-gray-200 p-5 shadow-sm md:col-span-2 xl:col-span-3 transition-all">
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                  <Barcode weight="fill" className="text-pink-500 text-lg" /> 熱門銷售料號 Top 10 (SKU 貢獻額)
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
                 </h3>
-                <span className="text-[10px] text-gray-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
+                <span className="text-[10px] text-slate-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
               </div>
               <div className="relative w-full h-[300px]">
                 <Bar data={skuData} options={hBarOpts()} />

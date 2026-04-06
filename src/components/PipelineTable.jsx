@@ -1,41 +1,106 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Trash, MagnifyingGlass, Funnel, Columns, CaretUp, CaretDown,
-  Plus, MicrosoftExcelLogo, PencilSimple, X, Lock,
+  Trash, MagnifyingGlass, Funnel, Columns, CaretUp, CaretDown, CaretRight,
+  Plus, MicrosoftExcelLogo, PencilSimple, X, Lock, ArrowsOutCardinal,
 } from '@phosphor-icons/react';
 import { dictData as defaultDictData } from '../utils/mockData';
 import { ProductBadge, StageBadge } from './Badges';
+import { USD_EXCHANGE_RATE } from '../utils/constants';
+
+// ── ShimmerButton (CTA with sweep light + spring press) ──
+function ShimmerButton({ children, onClick, className = '' }) {
+  return (
+    <motion.button
+      whileTap={{ scale: 0.95 }}
+      onClick={onClick}
+      className={`relative overflow-hidden bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-shadow duration-300 flex items-center justify-center gap-2 shadow-[var(--shadow-soft-sm)] hover:shadow-[var(--shadow-glow-brand)] cursor-pointer ${className}`}
+    >
+      {/* Shimmer overlay */}
+      <span className="absolute inset-0 shimmer pointer-events-none" />
+      <span className="relative z-10 flex items-center gap-1.5">{children}</span>
+    </motion.button>
+  );
+}
 
 // ===== Initial column definition =====
-const INITIAL_COLUMNS = [
-  { id: 'enduser',  label: 'EU',      align: 'left',  width: 140, isCustom: false },
-  { id: 'si',       label: 'Partner',  align: 'left',  width: 140, isCustom: false },
-  { id: 'reqType',  label: 'Type',     align: 'left',  width: 80,  isCustom: false },
-  { id: 'product',  label: 'Cat.',     align: 'left',  width: 110, isCustom: false },
-  { id: 'sku',      label: 'SKU',      align: 'left',  width: 180, isCustom: false },
-  { id: 'quantity', label: 'QTY',      align: 'right', width: 80,  isCustom: false },
-  { id: 'amount',   label: 'NTM',      align: 'right', width: 120, isCustom: false },
-  { id: 'date',     label: 'POD',      align: 'left',  width: 100, isCustom: false },
+const SHARED_COLUMNS = [
+  { id: 'enduser',  label: 'EU',      align: 'left',  width: 180, isCustom: false },
+  { id: 'si',       label: 'Partner',  align: 'left',  width: 180, isCustom: false },
+  { id: 'reqType',  label: 'Type',     align: 'left',  width: 100, isCustom: false },
+  { id: 'product',  label: 'Cat.',     align: 'left',  width: 130, isCustom: false },
+  { id: 'sku',      label: 'SKU',      align: 'left',  width: 260, isCustom: false },
+  { id: 'quantity', label: 'QTY',      align: 'right', width: 90,  isCustom: false },
+  { id: 'amount',   label: 'NTM',      align: 'right', width: 140, isCustom: false },
+  { id: 'date',     label: 'POD',      align: 'left',  width: 120, isCustom: false },
   { id: 'stage',    label: 'Stage',    align: 'left',  width: 90,  isCustom: false },
   { id: 'notes',    label: 'Notes',    align: 'left',  width: 200, isCustom: false },
   { id: 'sales',    label: 'Sales',    align: 'left',  width: 100, isCustom: false },
   { id: 'pm',       label: 'PM',       align: 'left',  width: 110, isCustom: false },
 ];
 
-const DEFAULT_VISIBLE = Object.fromEntries(INITIAL_COLUMNS.map(c => [c.id, true]));
+// CAIP-only extended columns
+const CAIP_EXTRA_COLUMNS = [
+  { id: 'segment',        label: 'Segment',     align: 'left',  width: 110, isCustom: false },
+  { id: 'disti_name',     label: 'Disti',        align: 'left',  width: 110, isCustom: false },
+  { id: 'sales_stage',    label: 'Sales Stage',  align: 'left',  width: 100, isCustom: false },
+  { id: 'referral_id',    label: 'Referral ID',  align: 'left',  width: 120, isCustom: false },
+  { id: 'acr_start_month',label: 'ACR Start',    align: 'left',  width: 100, isCustom: false },
+  { id: 'acr_mom',        label: 'ACR/Month',    align: 'right', width: 100, isCustom: false },
+  { id: 'jul',   label: 'Jul',  align: 'right', width: 80, isCustom: false },
+  { id: 'aug',   label: 'Aug',  align: 'right', width: 80, isCustom: false },
+  { id: 'sep',   label: 'Sep',  align: 'right', width: 80, isCustom: false },
+  { id: 'oct',   label: 'Oct',  align: 'right', width: 80, isCustom: false },
+  { id: 'nov',   label: 'Nov',  align: 'right', width: 80, isCustom: false },
+  { id: 'dec',   label: 'Dec',  align: 'right', width: 80, isCustom: false },
+  { id: 'jan',   label: 'Jan',  align: 'right', width: 80, isCustom: false },
+  { id: 'feb',   label: 'Feb',  align: 'right', width: 80, isCustom: false },
+  { id: 'mar',   label: 'Mar',  align: 'right', width: 80, isCustom: false },
+  { id: 'apr',   label: 'Apr',  align: 'right', width: 80, isCustom: false },
+  { id: 'may',   label: 'May',  align: 'right', width: 80, isCustom: false },
+  { id: 'jun',   label: 'Jun',  align: 'right', width: 80, isCustom: false },
+  { id: 'q1',    label: 'Q1',   align: 'right', width: 80, isCustom: false },
+  { id: 'q2',    label: 'Q2',   align: 'right', width: 80, isCustom: false },
+  { id: 'q3',    label: 'Q3',   align: 'right', width: 80, isCustom: false },
+  { id: 'q4',    label: 'Q4',   align: 'right', width: 80, isCustom: false },
+];
+
+const CAIP_NUM_IDS = new Set(['acr_mom','jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','q1','q2','q3','q4']);
+
+const INITIAL_COLUMNS = SHARED_COLUMNS;
+
+const DEFAULT_VISIBLE = Object.fromEntries(SHARED_COLUMNS.map(c => [c.id, true]));
 const INITIAL_TABS = [
   { id: 'tab_all', name: '全部', removable: false },
   { id: 'tab_new', name: '新購', removable: true },
   { id: 'tab_add', name: '增購', removable: true },
 ];
 const PAGE_SIZE_OPTIONS = [7, 15, 30, 0]; // 0 = 全部
-const USD_RATE = 32;
 
 // ===================================================================
 // Main Component
 // ===================================================================
-export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail }) {
+export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail, viewMode = 'AIBS', showConfirm }) {
+  const isCAIP = viewMode === 'CAIP';
   const dictData = dictionary || defaultDictData;
+
+  // ── Inline prompt state (replaces window.prompt) ──
+  const [inlinePrompt, setInlinePrompt] = useState({ open: false, title: '', defaultValue: '', resolve: null });
+  const inlinePromptRef = useRef(null);
+  function openInlinePrompt(title, defaultValue = '') {
+    return new Promise(resolve => {
+      setInlinePrompt({ open: true, title, defaultValue, resolve });
+    });
+  }
+  function handleInlinePromptOk() {
+    const val = inlinePromptRef.current?.value?.trim();
+    inlinePrompt.resolve?.(val || null);
+    setInlinePrompt({ open: false, title: '', defaultValue: '', resolve: null });
+  }
+  function handleInlinePromptCancel() {
+    inlinePrompt.resolve?.(null);
+    setInlinePrompt({ open: false, title: '', defaultValue: '', resolve: null });
+  }
 
   // ── RBAC: 權限過濾 ──
   const isSuperAdmin = currentUserPermissions?.role === 'SuperAdmin';
@@ -52,21 +117,39 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   }
 
   const rbacData = useMemo(() => {
+    let result = data;
+    // ── ViewMode filter: AIBS = 非 Azure, CAIP = 僅 Azure ──
+    if (isCAIP) {
+      result = result.filter(r => r.product === 'Azure');
+    } else {
+      result = result.filter(r => r.product !== 'Azure');
+    }
     if (isGuest) return [];
-    if (userRole?.role === 'sales') return data.filter(r => r.sales === userRole.code);
-    return data; // PM sees all
-  }, [data, userRole, isGuest]);
+    if (userRole?.role === 'sales') return result.filter(r => r.sales === userRole.code);
+    return result;
+  }, [data, userRole, isGuest, isCAIP]);
 
   function getNameFromDict(dictKey, code) {
     const entry = dictData[dictKey]?.find(d => d.code === code);
     return entry ? entry.label : code;
   }
 
+  // --- Base columns depend on viewMode ---
+  const BASE_COLUMNS = useMemo(() => isCAIP ? [...SHARED_COLUMNS, ...CAIP_EXTRA_COLUMNS] : SHARED_COLUMNS, [isCAIP]);
+
   // --- (4) Columns state for drag-and-drop reorder (unified: built-in + custom) ---
   const [columns, setColumns] = useState(() => [
-    ...INITIAL_COLUMNS,
+    ...BASE_COLUMNS,
     ...customColumns.map(c => ({ id: c.id, label: c.name, align: 'left', width: 150, isCustom: true })),
   ]);
+
+  // Sync columns when viewMode changes
+  useEffect(() => {
+    setColumns(prev => {
+      const customCols = prev.filter(c => c.isCustom);
+      return [...BASE_COLUMNS, ...customCols];
+    });
+  }, [BASE_COLUMNS]);
 
   // Sync external customColumns prop into the unified columns state
   useEffect(() => {
@@ -84,11 +167,12 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
   // --- (5) Column widths state for resizing ---
   const [colWidths, setColWidths] = useState(() =>
-    Object.fromEntries(INITIAL_COLUMNS.map(c => [c.id, c.width]))
+    Object.fromEntries([...SHARED_COLUMNS, ...CAIP_EXTRA_COLUMNS].map(c => [c.id, c.width]))
   );
 
   // --- Column DnD refs ---
   const dragColRef = useRef(null);
+  const tableRef = useRef(null);
 
   function handleColDragStart(e, colId) {
     dragColRef.current = colId;
@@ -148,24 +232,71 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     document.body.classList.add('cursor-col-resize', 'select-none');
   }
 
-  // --- Tabs state & DnD ---
-  const [tabs, setTabs] = useState(INITIAL_TABS);
+  // --- (5b) Double-click auto-fit column width ---
+  function handleAutoFitColumn(colId) {
+    const table = tableRef.current;
+    if (!table) return;
+    const cells = table.querySelectorAll(`td[data-col="${colId}"]`);
+    const headerCell = table.querySelector(`th[data-col="${colId}"]`);
+    let maxWidth = 60; // minimum
+    // Measure header text
+    if (headerCell) {
+      const span = headerCell.querySelector('span');
+      if (span) maxWidth = Math.max(maxWidth, span.scrollWidth + 32);
+    }
+    // Measure all body cells
+    cells.forEach(td => {
+      // Create an off-screen measurer to get natural width
+      const measurer = document.createElement('span');
+      measurer.style.cssText = 'visibility:hidden;position:absolute;white-space:nowrap;font:inherit;';
+      measurer.textContent = td.textContent || '';
+      document.body.appendChild(measurer);
+      maxWidth = Math.max(maxWidth, measurer.offsetWidth + 32); // 32px for padding
+      document.body.removeChild(measurer);
+    });
+    // Cap at reasonable max
+    maxWidth = Math.min(maxWidth, 500);
+    setColWidths(prev => ({ ...prev, [colId]: maxWidth }));
+  }
+
+  // --- Tabs state & DnD (persisted per viewMode) ---
+  const tabsStorageKey = `pipeline_tabs_${viewMode}`;
+  const [tabs, setTabs] = useState(() => {
+    try {
+      const saved = localStorage.getItem(tabsStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return INITIAL_TABS;
+  });
+  // Sync tabs from localStorage when viewMode changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(tabsStorageKey);
+      if (saved) { setTabs(JSON.parse(saved)); }
+      else { setTabs(INITIAL_TABS); }
+    } catch { setTabs(INITIAL_TABS); }
+  }, [tabsStorageKey]);
+  // Persist tabs to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(tabsStorageKey, JSON.stringify(tabs)); } catch {}
+  }, [tabs, tabsStorageKey]);
   const dragTabRef = useRef(null);
 
-  function addCustomTab() {
-    const name = window.prompt('請輸入新頁籤名稱 (例如: VIP客戶、本週急單)：');
-    if (!name?.trim()) return;
+  async function addCustomTab() {
+    const name = await openInlinePrompt('請輸入新頁籤名稱 (例如: VIP客戶、本週急單)');
+    if (!name) return;
     const id = 'tab_' + Date.now();
-    setTabs(prev => [...prev, { id, name: name.trim(), removable: true }]);
-    setActiveTab(name.trim());
+    setTabs(prev => [...prev, { id, name, removable: true }]);
+    setActiveTab(name);
   }
 
   function handleDeleteTab(e, tabId) {
     e.stopPropagation();
-    if (!window.confirm('確定要刪除此自訂頁籤嗎？')) return;
-    const deleted = tabs.find(t => t.id === tabId);
-    setTabs(prev => prev.filter(t => t.id !== tabId));
-    if (deleted && activeTab === deleted.name) setActiveTab('全部');
+    showConfirm?.('確定要刪除此自訂頁籤嗎？', () => {
+      const deleted = tabs.find(t => t.id === tabId);
+      setTabs(prev => prev.filter(t => t.id !== tabId));
+      if (deleted && activeTab === deleted.name) setActiveTab('全部');
+    });
   }
 
   function handleTabDragStart(e, tabId) {
@@ -190,31 +321,32 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   function handleTabDragEnd(e) { e.currentTarget.style.opacity = '1'; dragTabRef.current = null; }
 
   // --- Custom columns handlers (unified with columns state) ---
-  function addCustomColumn() {
-    const name = window.prompt('請輸入新動態欄位名稱 (例如: 競爭對手)：');
-    if (!name?.trim()) return;
+  async function addCustomColumn() {
+    const name = await openInlinePrompt('請輸入新動態欄位名稱 (例如: 競爭對手)');
+    if (!name) return;
     const id = 'custom_' + Date.now();
-    const newCol = { id, label: name.trim(), align: 'left', width: 150, isCustom: true };
+    const newCol = { id, label: name, align: 'left', width: 150, isCustom: true };
     setColumns(prev => [...prev, newCol]);
-    setCustomColumns(prev => [...prev, { id, name: name.trim() }]);
+    setCustomColumns(prev => [...prev, { id, name }]);
     setVisibleCols(prev => ({ ...prev, [id]: true }));
   }
 
-  function renameCustomColumn(e, colId) {
+  async function renameCustomColumn(e, colId) {
     e.stopPropagation();
     const col = columns.find(c => c.id === colId);
     if (!col) return;
-    const newName = window.prompt('重新命名欄位：', col.label);
-    if (!newName?.trim()) return;
-    setColumns(prev => prev.map(c => c.id === colId ? { ...c, label: newName.trim() } : c));
-    setCustomColumns(prev => prev.map(c => c.id === colId ? { ...c, name: newName.trim() } : c));
+    const newName = await openInlinePrompt('重新命名欄位', col.label);
+    if (!newName) return;
+    setColumns(prev => prev.map(c => c.id === colId ? { ...c, label: newName } : c));
+    setCustomColumns(prev => prev.map(c => c.id === colId ? { ...c, name: newName } : c));
   }
 
   function deleteCustomColumn(e, colId) {
     e.stopPropagation();
-    if (!window.confirm('確定要刪除此自訂欄位嗎？這將會清空該欄位的所有資料。')) return;
-    setColumns(prev => prev.filter(c => c.id !== colId));
-    setCustomColumns(prev => prev.filter(c => c.id !== colId));
+    showConfirm?.('確定要刪除此自訂欄位嗎？這將會清空該欄位的所有資料。', () => {
+      setColumns(prev => prev.filter(c => c.id !== colId));
+      setCustomColumns(prev => prev.filter(c => c.id !== colId));
+    });
   }
 
   // --- Core UI state ---
@@ -233,6 +365,8 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   const [filterProducts, setFilterProducts] = useState([]);
   const [filterStages, setFilterStages] = useState([]);
   const [filterPMs, setFilterPMs] = useState([]);
+  const [filterAcrPositive, setFilterAcrPositive] = useState([]);
+  const [filterSegments, setFilterSegments] = useState([]);
 
   // Sorting
   const [sortCol, setSortCol] = useState(null);
@@ -240,6 +374,9 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
   // Row selection
   const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Group expand/collapse
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
 
   // Refs for click-outside
   const filterRef = useRef(null);
@@ -256,7 +393,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   }, []);
 
   // Reset page when filters or page size change
-  useEffect(() => { setCurrentPage(1); }, [activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterDateStart, filterDateEnd, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterAcrPositive, pageSize]);
 
   // ─── Derived: filtered + sorted data ───
   const filteredData = useMemo(() => {
@@ -277,8 +414,13 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     if (filterProducts.length > 0) result = result.filter(r => filterProducts.includes(r.product));
     if (filterStages.length > 0) result = result.filter(r => filterStages.includes(r.stage));
     if (filterPMs.length > 0) result = result.filter(r => filterPMs.includes(r.pm));
+    if (filterSegments.length > 0) result = result.filter(r => filterSegments.includes(r.segment));
     if (filterDateStart) result = result.filter(r => r.date >= filterDateStart);
     if (filterDateEnd) result = result.filter(r => r.date <= filterDateEnd);
+    // CAIP: filter rows where selected month/quarter columns > 0
+    if (filterAcrPositive.length > 0) {
+      result = result.filter(r => filterAcrPositive.every(k => Number(r[k]) > 0));
+    }
     if (sortCol) {
       result = [...result].sort((a, b) => {
         let va = a[sortCol] ?? '';
@@ -292,7 +434,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       });
     }
     return result;
-  }, [rbacData, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterDateStart, filterDateEnd, sortCol, sortAsc]);
+  }, [rbacData, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterAcrPositive, sortCol, sortAsc]);
 
   // Tab badge counts (from full data)
   const tabCounts = useMemo(() => {
@@ -306,15 +448,39 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   // KPI
   const totalAmount = useMemo(() => filteredData.reduce((s, r) => s + (r.amount || 0), 0), [filteredData]);
 
-  // Pagination
-  const totalItems = filteredData.length;
+  // ─── Group by EU + Partner ───
+  const groupedData = useMemo(() => {
+    const groups = new Map();
+    for (const row of filteredData) {
+      const key = `${row.enduser || ''}|||${row.si || ''}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          enduser: row.enduser || '',
+          si: row.si || '',
+          children: [],
+          totalAmount: 0,
+          sales: row.sales,
+          pm: row.pm,
+        });
+      }
+      const g = groups.get(key);
+      g.children.push(row);
+      g.totalAmount += (row.amount || 0);
+    }
+    return Array.from(groups.values());
+  }, [filteredData]);
+
+  // Pagination (by groups)
+  const totalGroups = groupedData.length;
+  const totalRecords = filteredData.length;
   const showAll = pageSize === 0;
-  const effectivePageSize = showAll ? totalItems : pageSize;
-  const totalPages = showAll ? 1 : (Math.ceil(totalItems / effectivePageSize) || 1);
+  const effectivePageSize = showAll ? totalGroups : pageSize;
+  const totalPages = showAll ? 1 : (Math.ceil(totalGroups / effectivePageSize) || 1);
   const safePage = Math.min(currentPage, totalPages);
   const startIdx = showAll ? 0 : (safePage - 1) * effectivePageSize;
-  const endIdx = showAll ? totalItems : Math.min(startIdx + effectivePageSize, totalItems);
-  const pageData = filteredData.slice(startIdx, endIdx);
+  const endIdx = showAll ? totalGroups : Math.min(startIdx + effectivePageSize, totalGroups);
+  const pageGroups = groupedData.slice(startIdx, endIdx);
 
   // ─── Handlers ───
   function handleSort(colKey) {
@@ -329,6 +495,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   function clearAllFilters() {
     setFilterDateStart(''); setFilterDateEnd('');
     setFilterTypes([]); setFilterProducts([]); setFilterStages([]); setFilterPMs([]);
+    setFilterAcrPositive([]); setFilterSegments([]);
   }
 
   function toggleColVisibility(key) {
@@ -347,15 +514,28 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     });
   }
 
-  const allPageSelected = pageData.length > 0 && pageData.every(r => selectedIds.has(r.id));
+  const allPageRecords = pageGroups.flatMap(g => g.children);
+  const allPageSelected = allPageRecords.length > 0 && allPageRecords.every(r => selectedIds.has(r.id));
   function toggleAllPageRows() {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (allPageSelected) {
-        pageData.forEach(r => next.delete(r.id));
+        allPageRecords.forEach(r => next.delete(r.id));
       } else {
-        pageData.forEach(r => { if (r.id) next.add(r.id); });
+        allPageRecords.forEach(r => { if (r.id) next.add(r.id); });
       }
+      return next;
+    });
+  }
+
+  function toggleGroupSelect(group) {
+    const allSelected = group.children.every(r => selectedIds.has(r.id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      group.children.forEach(r => {
+        if (allSelected) next.delete(r.id);
+        else if (r.id) next.add(r.id);
+      });
       return next;
     });
   }
@@ -363,10 +543,11 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   const handleBatchDelete = useCallback(() => {
     const count = selectedIds.size;
     if (count === 0) return;
-    if (!window.confirm(`警告：確定要批次刪除這 ${count} 筆商機紀錄嗎？此動作無法復原。`)) return;
-    onBatchDelete([...selectedIds]);
-    setSelectedIds(new Set());
-  }, [selectedIds, onBatchDelete]);
+    showConfirm?.(`警告：確定要批次刪除這 ${count} 筆商機紀錄嗎？此動作無法復原。`, () => {
+      onBatchDelete([...selectedIds]);
+      setSelectedIds(new Set());
+    });
+  }, [selectedIds, onBatchDelete, showConfirm]);
 
   // (1) Cell rendering – reqType uses inline <select> styled as badge
   function renderCell(row, colKey) {
@@ -375,14 +556,18 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
         const typeColorMap = {
           '新購': 'bg-teal-50 text-teal-700 border-teal-200',
           '增購': 'bg-rose-50 text-rose-700 border-rose-200',
+          '移轉': 'bg-amber-50 text-amber-700 border-amber-200',
+          '轉移': 'bg-amber-50 text-amber-700 border-amber-200',
+          'transfer': 'bg-amber-50 text-amber-700 border-amber-200',
         };
-        const typeCls = typeColorMap[row.reqType] || 'bg-gray-100 text-gray-700 border-gray-300';
+        const reqLabel = getNameFromDict('reqType', row.reqType);
+        const typeCls = typeColorMap[reqLabel] || typeColorMap[row.reqType] || 'bg-slate-100/80 text-slate-600 ring-slate-400/20';
         return (
           <div className="group/type relative inline-flex items-center">
             <select
               value={row.reqType || ''}
               onChange={e => onUpdateRecord?.(row.id, 'reqType', e.target.value)}
-              className={`appearance-none cursor-pointer px-2 py-0.5 pr-5 rounded text-[11px] font-medium border outline-none hover:ring-1 hover:ring-brand-300 transition-all ${typeCls}`}
+              className={`appearance-none cursor-pointer px-2.5 py-1 pr-6 rounded-md text-[11px] font-medium ring-1 ring-inset outline-none bg-transparent hover:bg-slate-50 focus:ring-2 focus:ring-brand-500/30 focus:bg-white transition-colors duration-200 ${typeCls}`}
               title="點擊切換類型"
             >
               {(dictData.reqType || []).map(opt => (
@@ -394,21 +579,21 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
         );
       }
       case 'product':
-        return <ProductBadge text={row[colKey]} />;
+        return <ProductBadge code={row[colKey]} label={getNameFromDict('product', row[colKey])} />;
       case 'stage':
-        return <StageBadge stage={row[colKey]} />;
+        return <StageBadge stage={row[colKey]} label={getNameFromDict('stage', row[colKey])} />;
       case 'quantity':
-        return <span className="font-mono text-gray-600">{row.quantity?.toLocaleString?.() ?? row.quantity}</span>;
+        return <span className="text-sm font-medium text-slate-500 tabular-nums font-mono">{row.quantity?.toLocaleString?.() ?? row.quantity}</span>;
       case 'amount':
-        return <span className="font-mono text-gray-600">{row.amount != null ? `NT$ ${row.amount.toLocaleString()}` : '-'}</span>;
+        return <span className="text-sm font-medium text-slate-500 tabular-nums font-mono">{row.amount != null ? `NT$ ${row.amount.toLocaleString()}` : '-'}</span>;
       case 'enduser':
-        return <span className="font-medium text-gray-900">{row.enduser}</span>;
+        return <span className="text-sm font-medium text-slate-800">{row.enduser}</span>;
       case 'si':
-        return <span className="text-gray-600">{row.si}</span>;
+        return <span className="text-sm font-medium text-slate-800">{row.si}</span>;
       case 'notes':
         return (
           <span
-            className="text-xs text-brand-600 hover:text-brand-800 font-medium cursor-pointer truncate block max-w-[200px] hover:underline underline-offset-2"
+            className="text-xs text-slate-400 font-normal cursor-pointer truncate block max-w-[200px] hover:text-brand-600 hover:underline underline-offset-2 transition-colors"
             onClick={() => onEditRecord?.(row)}
             title={row.notes || ''}
           >
@@ -416,19 +601,64 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           </span>
         );
       case 'sales':
-        return getNameFromDict('sales', row.sales);
+        return <span className="text-sm font-medium text-slate-800">{getNameFromDict('sales', row.sales)}</span>;
       case 'pm':
-        return getNameFromDict('pm', row.pm);
+        return <span className="text-sm font-medium text-slate-800">{getNameFromDict('pm', row.pm)}</span>;
       case 'date':
-        return <span className="text-gray-500">{row.date}</span>;
+        return <span className="text-slate-500 tabular-nums">{row.date}</span>;
       case 'sku':
-        return <span className="font-medium">{row.sku}</span>;
+        return <span className="font-medium text-slate-600">{row.sku}</span>;
       default:
-        return <span className="text-gray-500">{row[colKey] ?? '-'}</span>;
+        // CAIP numeric fields: formatted numbers
+        if (CAIP_NUM_IDS.has(colKey)) {
+          const val = row[colKey];
+          return <span className="font-mono text-slate-600 tabular-nums">{val != null && val !== 0 ? Number(val).toLocaleString() : '-'}</span>;
+        }
+        return <span className="text-slate-500">{row[colKey] ?? '-'}</span>;
     }
   }
 
-  const hasActiveFilters = filterTypes.length > 0 || filterProducts.length > 0 || filterStages.length > 0 || filterPMs.length > 0 || filterDateStart || filterDateEnd;
+  // ── Parent row cell rendering (group-level summary) ──
+  function renderParentCell(group, colKey, isExpanded) {
+    switch (colKey) {
+      case 'enduser':
+        return (
+          <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+            {isExpanded
+              ? <CaretDown size={14} weight="fill" className="text-brand-500 shrink-0" />
+              : <CaretRight size={14} weight="fill" className="text-slate-400 shrink-0" />}
+            <span className="truncate">{group.enduser || '(未填寫)'}</span>
+            <span className="text-xs text-slate-400 font-normal ml-0.5">({group.children.length})</span>
+          </div>
+        );
+      case 'si':
+        return <span className="text-sm font-medium text-slate-800">{group.si}</span>;
+      case 'sales':
+        return <span className="text-sm font-medium text-slate-800">{getNameFromDict('sales', group.sales)}</span>;
+      case 'pm':
+        return <span className="text-sm font-medium text-slate-800">{getNameFromDict('pm', group.pm)}</span>;
+      case 'amount':
+        return <span className="text-sm font-bold text-slate-900 tabular-nums font-mono">NT$ {group.totalAmount.toLocaleString()}</span>;
+      case 'quantity':
+        return <span className="text-sm font-semibold text-slate-800 tabular-nums font-mono">{group.children.reduce((s, r) => s + (r.quantity || 0), 0).toLocaleString()}</span>;
+      default:
+        return null;
+    }
+  }
+
+  // ── Child row cell rendering (record-level detail) ──
+  function renderChildCell(row, colKey) {
+    switch (colKey) {
+      case 'enduser':
+        return <span className="text-gray-300 pl-5 select-none">└</span>;
+      case 'si':
+        return null;
+      default:
+        return renderCell(row, colKey);
+    }
+  }
+
+  const hasActiveFilters = filterTypes.length > 0 || filterProducts.length > 0 || filterStages.length > 0 || filterPMs.length > 0 || filterSegments.length > 0 || filterDateStart || filterDateEnd || filterAcrPositive.length > 0;
   const visibleColCount = columns.filter(c => visibleCols[c.id] !== false).length;
 
   // ===================================================================
@@ -438,13 +668,13 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     <div className="flex-1 flex flex-col h-full w-full overflow-hidden">
 
       {/* ════════════ 1. Header ════════════ */}
-      <header className="bg-white border-b border-fluent-border px-6 py-4 shrink-0 shadow-sm relative z-30">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-6 py-4 shrink-0 shadow-sm relative z-30">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 text-brand-700 tracking-wider border border-brand-200">MetaAge | Microsoft</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900">微軟商機總表</h1>
+            <h1 className="text-xl font-semibold text-gray-900">{isCAIP ? 'CAIP List' : 'AIBS List'}</h1>
           </div>
 
           <div className="flex flex-wrap md:flex-nowrap items-center gap-3 lg:justify-end">
@@ -465,7 +695,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                 <p className="text-lg font-bold text-brand-600 leading-none">
                   NT$ {totalAmount.toLocaleString()} <span className="text-xs font-medium text-gray-500 ml-0.5">TWD</span>
                 </p>
-                <p className="text-[10px] text-gray-400 mt-1 font-mono">≈ ${Math.round(totalAmount / USD_RATE).toLocaleString()} USD</p>
+                <p className="text-[10px] text-gray-400 mt-1 font-mono">≈ ${Math.round(totalAmount / USD_EXCHANGE_RATE).toLocaleString()} USD</p>
               </div>
             </div>
           </div>
@@ -474,7 +704,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
       {/* ════════════ Data Grid Container ════════════ */}
       <div className="flex-1 p-4 lg:p-6 overflow-hidden flex flex-col z-10">
-        <div className="bg-white rounded border border-fluent-border flex flex-col h-full shadow-sm" style={{ overflow: 'visible' }}>
+        <div className="bg-white rounded-2xl border border-slate-200/80 flex flex-col h-full shadow-sm overflow-hidden">
 
           {/* ── 2. Tabs (DnD) ── */}
           <div className="flex items-center gap-1 border-b border-fluent-border px-4 pt-2 bg-gray-50/50 overflow-x-auto overflow-y-hidden">
@@ -524,17 +754,17 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           </div>
 
           {/* ── 3. Toolbar ── */}
-          <div className="p-3 border-b border-fluent-border flex flex-col sm:flex-row justify-between items-center gap-3 bg-white shrink-0 relative z-40">
-            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+          <div className="p-3 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-white shrink-0 relative z-40">
+            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
               {/* Search */}
-              <div className="relative w-full sm:w-64">
-                <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <div className="relative w-full sm:w-72">
+                <MagnifyingGlass className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   placeholder="搜尋 EU、Partner 或 業務..."
-                  className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow placeholder-gray-400"
+                  className="w-full pl-10 pr-3 py-2 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/30 focus:border-brand-300 focus:bg-white outline-none transition-colors duration-200 placeholder-slate-400 shadow-[var(--shadow-soft-xs)]"
                 />
               </div>
 
@@ -542,21 +772,21 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
               <div className="relative z-[100]" ref={filterRef}>
                 <button
                   onClick={() => setShowFilter(p => !p)}
-                  className={`relative flex items-center justify-center gap-1.5 px-3 py-1.5 border rounded text-sm font-medium transition-colors shadow-sm cursor-pointer ${
+                  className={`relative flex items-center justify-center gap-1.5 px-3.5 py-2 border rounded-xl text-sm font-medium transition-colors duration-200 cursor-pointer ${
                     hasActiveFilters
-                      ? 'border-brand-300 bg-brand-50 text-brand-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50 bg-white'
+                      ? 'border-brand-200 bg-brand-50 text-brand-700 shadow-[var(--shadow-soft-xs)]'
+                      : 'border-slate-200/80 text-slate-600 hover:bg-slate-50 bg-white shadow-[var(--shadow-soft-xs)] hover:shadow-[var(--shadow-soft-sm)]'
                   }`}
                 >
                   <Funnel size={16} /> 條件篩選
                   {hasActiveFilters && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-500 rounded-full" />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-500 rounded-full ring-2 ring-white" />
                   )}
                 </button>
 
                 {/* (3) Filter Dropdown – removed 套用篩選 button, kept 重設條件 */}
                 {showFilter && (
-                  <div className="absolute top-full left-0 sm:left-auto sm:right-0 mt-1 w-[22rem] bg-white border border-gray-200 rounded shadow-2xl z-[100] p-4 text-sm max-h-[60vh] overflow-y-auto">
+                  <div className="absolute top-full left-0 sm:left-auto sm:right-0 mt-2 w-[22rem] bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-[var(--shadow-soft-lg)] z-[100] p-5 text-sm max-h-[60vh] overflow-y-auto">
                     <div className="font-semibold text-gray-800 mb-3 border-b pb-2 flex justify-between items-center">
                       進階篩選 <span className="text-[10px] text-brand-600 font-normal">即時過濾</span>
                     </div>
@@ -570,15 +800,55 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <FilterCheckboxGroup title="Type" items={dictData.reqType} checked={filterTypes} onToggle={v => toggleCheckboxFilter(v, setFilterTypes)} />
-                      <FilterCheckboxGroup title="Cat." items={dictData.product} checked={filterProducts} onToggle={v => toggleCheckboxFilter(v, setFilterProducts)} />
+                      <FilterCheckboxGroup title="Cat." items={(dictData.product || []).filter(d => isCAIP ? d.code === 'Azure' : d.code !== 'Azure')} checked={filterProducts} onToggle={v => toggleCheckboxFilter(v, setFilterProducts)} />
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-5">
                       <FilterCheckboxGroup title="Stage" items={dictData.stage} checked={filterStages} onToggle={v => toggleCheckboxFilter(v, setFilterStages)} />
                       <FilterCheckboxGroup title="PM" items={dictData.pm} checked={filterPMs} onToggle={v => toggleCheckboxFilter(v, setFilterPMs)} />
                     </div>
+                    {/* SEGMENT filter (CAIP only, dynamic from data) */}
+                    {isCAIP && (() => {
+                      const segmentOptions = [...new Set(rbacData.map(r => r.segment).filter(Boolean))].sort().map(s => ({ code: s, label: s }));
+                      return segmentOptions.length > 0 ? (
+                        <div className="mb-4">
+                          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">Segment</label>
+                          <div className="max-h-40 overflow-y-auto pr-2 flex flex-col gap-0.5 text-xs text-gray-600">
+                            {segmentOptions.map(item => (
+                              <label key={item.code} className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
+                                <input type="checkbox" checked={filterSegments.includes(item.code)} onChange={() => toggleCheckboxFilter(item.code, setFilterSegments)} className="text-brand-600 focus:ring-brand-500 rounded-sm w-3.5 h-3.5 cursor-pointer" />
+                                <span>{item.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="flex justify-end border-t pt-3">
                       <button onClick={clearAllFilters} className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-100 rounded text-xs transition-colors font-medium cursor-pointer">重設條件</button>
                     </div>
+
+                    {/* CAIP: Month & Quarter positive-value filter */}
+                    {isCAIP && (
+                      <div className="mt-4 border-t pt-3">
+                        <div className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">CAIP 預估營收篩選 (大於 0)</div>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                          {['q1','q2','q3','q4'].map(k => (
+                            <label key={k} className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
+                              <input type="checkbox" checked={filterAcrPositive.includes(k)} onChange={() => toggleCheckboxFilter(k, setFilterAcrPositive)} className="text-brand-600 focus:ring-brand-500 rounded-sm w-3.5 h-3.5 cursor-pointer" />
+                              <span className="text-xs text-gray-600 font-medium">{k.toUpperCase()}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                          {['jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun'].map(k => (
+                            <label key={k} className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
+                              <input type="checkbox" checked={filterAcrPositive.includes(k)} onChange={() => toggleCheckboxFilter(k, setFilterAcrPositive)} className="text-brand-600 focus:ring-brand-500 rounded-sm w-3.5 h-3.5 cursor-pointer" />
+                              <span className="text-xs text-gray-600">{k.charAt(0).toUpperCase() + k.slice(1)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -587,23 +857,78 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
               {canDelete && selectedIds.size > 0 && (
                 <button
                   onClick={handleBatchDelete}
-                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-red-200 rounded text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors shadow-sm cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 border border-red-200 rounded-xl text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors duration-200 shadow-[var(--shadow-soft-xs)] cursor-pointer"
                 >
                   <Trash size={16} /> 批次刪除 ({selectedIds.size})
                 </button>
               )}
             </div>
 
-            {/* Column visibility */}
-            <div className="relative w-full sm:w-auto" ref={colMenuRef}>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              {/* Batch expand/collapse */}
+              <button
+                onClick={() => {
+                  // Smart expand: if any groups are selected, only toggle those
+                  const selectedGroupKeys = pageGroups
+                    .filter(g => g.children.some(r => selectedIds.has(r.id)))
+                    .map(g => g.key);
+
+                  if (selectedGroupKeys.length > 0) {
+                    // Scenario A: toggle only selected groups
+                    const allSelectedExpanded = selectedGroupKeys.every(k => expandedGroups.has(k));
+                    setExpandedGroups(prev => {
+                      const next = new Set(prev);
+                      if (allSelectedExpanded) {
+                        selectedGroupKeys.forEach(k => next.delete(k));
+                      } else {
+                        selectedGroupKeys.forEach(k => next.add(k));
+                      }
+                      return next;
+                    });
+                  } else {
+                    // Scenario B: toggle all groups on page
+                    const allExpanded = pageGroups.length > 0 && pageGroups.every(g => expandedGroups.has(g.key));
+                    setExpandedGroups(prev => {
+                      const next = new Set(prev);
+                      if (allExpanded) {
+                        pageGroups.forEach(g => next.delete(g.key));
+                      } else {
+                        pageGroups.forEach(g => next.add(g.key));
+                      }
+                      return next;
+                    });
+                  }
+                }}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors duration-200 bg-white cursor-pointer"
+                title={(() => {
+                  const hasSelected = pageGroups.some(g => g.children.some(r => selectedIds.has(r.id)));
+                  return hasSelected ? '展開/收合選取' : '展開/收合全部';
+                })()}
+              >
+                <ArrowsOutCardinal size={16} />
+                {(() => {
+                  const selectedGroupKeys = pageGroups
+                    .filter(g => g.children.some(r => selectedIds.has(r.id)))
+                    .map(g => g.key);
+                  if (selectedGroupKeys.length > 0) {
+                    const allSelectedExpanded = selectedGroupKeys.every(k => expandedGroups.has(k));
+                    return allSelectedExpanded ? '收合選取' : '展開選取';
+                  }
+                  const allExpanded = pageGroups.length > 0 && pageGroups.every(g => expandedGroups.has(g.key));
+                  return allExpanded ? '收合全部' : '展開全部';
+                })()}
+              </button>
+
+              {/* Column visibility */}
+              <div className="relative w-full sm:w-auto" ref={colMenuRef}>
               <button
                 onClick={() => setShowColMenu(p => !p)}
-                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors bg-white shadow-sm cursor-pointer"
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-2 border border-slate-200/80 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors duration-200 bg-white shadow-[var(--shadow-soft-xs)] hover:shadow-[var(--shadow-soft-sm)] cursor-pointer"
               >
                 <Columns size={16} /> 顯示/隱藏欄位
               </button>
               {showColMenu && (
-                <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 rounded shadow-lg z-50 p-2 text-sm max-h-96 overflow-y-auto">
+                <div className="absolute right-0 mt-2 w-52 bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-[var(--shadow-soft-lg)] z-50 p-2.5 text-sm max-h-96 overflow-y-auto">
                   <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">勾選以顯示欄位</div>
                   {columns.map(col => (
                     <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
@@ -614,15 +939,16 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                 </div>
               )}
             </div>
+            </div>
           </div>
 
           {/* ── 4. Table (scrollable area) ── */}
           <div className="flex-1 overflow-auto grid-scroll relative z-10">
-            <table className="w-full text-left border-collapse whitespace-nowrap min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
-              <thead className="sticky top-0 bg-white shadow-[0_1px_0_0_#e1dfdd] z-20 text-[11px] uppercase tracking-wider text-fluent-muted font-semibold select-none">
+            <table ref={tableRef} className="w-full text-left border-collapse whitespace-nowrap min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+              <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm shadow-[0_1px_0_0_rgba(0,0,0,0.04)] z-20 text-xs uppercase tracking-wider text-slate-400 font-semibold select-none">
                 <tr>
-                  {/* Select-all checkbox */}
-                  <th className="px-3 py-3 w-10 text-center bg-white" style={{ width: 44 }}>
+                  {/* Select-all checkbox — sticky */}
+                  <th className="px-3 py-3 w-10 text-center bg-slate-50 sticky left-0 z-30" style={{ width: 44 }}>
                     <input
                       type="checkbox"
                       checked={allPageSelected}
@@ -632,10 +958,12 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                   </th>
 
                   {/* (4) All columns (built-in + custom) — unified draggable + resizable */}
-                  {columns.map(col => {
+                  {columns.map((col, colIdx) => {
                     if (visibleCols[col.id] === false) return null;
                     const isSorted = sortCol === col.id;
                     const width = colWidths[col.id] || col.width;
+                    const isFirstVisible = col.id === columns.find(c => visibleCols[c.id] !== false)?.id;
+                    const stickyClass = isFirstVisible ? 'sticky left-[44px] z-30 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : '';
                     return (
                       <th
                         key={col.id}
@@ -646,7 +974,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                         onDragLeave={handleColDragLeave}
                         onDrop={e => handleColDrop(e, col.id)}
                         onDragEnd={handleColDragEnd}
-                        className={`px-4 py-3 transition-colors bg-white cursor-grab relative group/th ${col.align === 'right' ? 'text-right' : ''}`}
+                        className={`px-4 py-3 transition-colors bg-slate-50 cursor-grab relative group/th ${col.align === 'right' ? 'text-right' : ''} ${stickyClass}`}
                         style={{ width }}
                       >
                         {col.isCustom ? (
@@ -683,16 +1011,19 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                         )}
                         {/* (5) Column resizer handle */}
                         <div
-                          className="absolute top-0 right-0 w-[6px] h-full cursor-col-resize select-none z-10 hover:bg-brand-500/30 hover:border-r-2 hover:border-brand-500 active:bg-brand-500/30 active:border-r-2 active:border-brand-500"
+                          className="absolute top-0 right-0 w-4 h-full cursor-col-resize select-none z-10 flex items-center justify-center group/resizer"
                           onMouseDown={e => handleResizeStart(e, col.id)}
-                        />
+                          onDoubleClick={() => handleAutoFitColumn(col.id)}
+                        >
+                          <div className="w-[3px] h-1/2 rounded-full bg-slate-200/80 group-hover/resizer:bg-brand-400 active:bg-brand-500 transition-colors duration-200" />
+                        </div>
                       </th>
                     );
                   })}
 
                   {/* Add column button */}
                   <th
-                    className="px-2 py-3 text-center text-gray-400 cursor-pointer hover:bg-brand-50 hover:text-brand-600 transition-colors bg-white"
+                    className="px-2 py-3 text-center text-slate-400 cursor-pointer hover:bg-brand-50 hover:text-brand-600 transition-colors bg-slate-50"
                     style={{ width: 60 }}
                     onClick={addCustomColumn}
                     title="新增純文字欄位"
@@ -701,10 +1032,10 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                   </th>
 
                   {/* Action column header */}
-                  <th className="px-2 py-3 text-center bg-white w-[80px]" style={{ width: 80 }} />
+                  <th className="px-2 py-3 text-center bg-slate-50 w-[80px]" style={{ width: 80 }} />
                 </tr>
               </thead>
-              <tbody className="text-[13px] divide-y divide-fluent-border text-fluent-text bg-white">
+              <tbody className="text-[13px] text-fluent-text bg-white">
                 {isGuest ? (
                   <tr>
                     <td colSpan={visibleColCount + 3} className="px-4 py-16 text-center text-gray-400">
@@ -713,7 +1044,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                       <p className="text-xs text-gray-400 mt-1">請聯繫管理員，將您的信箱加入 Sales 或 PM 字典檔。</p>
                     </td>
                   </tr>
-                ) : pageData.length === 0 ? (
+                ) : pageGroups.length === 0 ? (
                   <tr>
                     <td colSpan={visibleColCount + 3} className="px-4 py-12 text-center text-gray-400">
                       <MagnifyingGlass size={28} className="mx-auto mb-2" />
@@ -721,60 +1052,110 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                     </td>
                   </tr>
                 ) : (
-                  pageData.map((row, idx) => {
-                    const isSelected = selectedIds.has(row.id);
+                  pageGroups.map((group) => {
+                    const isExpanded = expandedGroups.has(group.key);
+                    const allChildrenSelected = group.children.every(r => selectedIds.has(r.id));
+                    const someChildrenSelected = !allChildrenSelected && group.children.some(r => selectedIds.has(r.id));
                     return (
-                      <tr
-                        key={row.id || idx}
-                        className={`transition-colors group ${isSelected ? 'bg-blue-50' : 'hover:bg-fluent-hover'}`}
-                      >
-                        {/* Row checkbox */}
-                        <td className="px-3 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleRowSelect(row.id)}
-                            className="rounded-sm border-gray-300 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5 cursor-pointer"
-                          />
-                        </td>
+                      <Fragment key={group.key}>
+                        {/* ── Parent Row (Group Header) ── */}
+                        <tr
+                          className={`border-b border-slate-200/60 cursor-pointer transition-colors duration-200 select-none ${isExpanded ? 'bg-brand-50/40' : 'bg-slate-50/60 hover:bg-slate-100/70'}`}
+                          onClick={() => {
+                            setExpandedGroups(prev => {
+                              const next = new Set(prev);
+                              if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+                              return next;
+                            });
+                          }}
+                        >
+                          <td className={`px-3 py-2.5 text-center sticky left-0 z-10 ${isExpanded ? '!bg-blue-50' : '!bg-white'}`} onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={allChildrenSelected}
+                              ref={el => { if (el) el.indeterminate = someChildrenSelected; }}
+                              onChange={() => toggleGroupSelect(group)}
+                              className="rounded-sm border-gray-300 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                          </td>
+                          {columns.map(col => {
+                            if (visibleCols[col.id] === false) return null;
+                            const isFirstVisible = col.id === columns.find(c => visibleCols[c.id] !== false)?.id;
+                            const stickyTd = isFirstVisible ? `sticky left-[44px] z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)] ${isExpanded ? '!bg-blue-50' : '!bg-white'}` : '';
+                            return (
+                              <td
+                                key={col.id}
+                                data-col={col.id}
+                                className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : ''} ${stickyTd}`}
+                                style={{ width: colWidths[col.id] || col.width }}
+                              >
+                                {renderParentCell(group, col.id, isExpanded)}
+                              </td>
+                            );
+                          })}
+                          <td style={{ width: 60 }} />
+                          <td className="px-2 py-2.5 text-center" style={{ width: 80 }}>
+                            <span className="text-xs text-slate-400 font-normal font-mono">{group.children.length} 筆</span>
+                          </td>
+                        </tr>
 
-                        {/* (4) Render cells from unified columns state */}
-                        {columns.map(col => {
-                          if (visibleCols[col.id] === false) return null;
+                        {/* ── Child Rows (expanded records) ── */}
+                        {isExpanded && group.children.map((row, childIdx) => {
+                          const isSelected = selectedIds.has(row.id);
                           return (
-                            <td
-                              key={col.id}
-                              data-col={col.id}
-                              className={`px-4 py-2 overflow-hidden text-ellipsis ${col.align === 'right' ? 'text-right' : ''} truncate`}
-                              style={{ width: colWidths[col.id] || col.width }}
+                            <tr
+                              key={row.id || childIdx}
+                              className={`transition-colors duration-200 group border-b border-slate-100/60 cursor-pointer ${isSelected ? 'bg-blue-50/70' : 'bg-slate-50/50 hover:bg-slate-100/60'}`}
+                              onDoubleClick={() => { if (canUpdate && isOwner(row)) onEditRecord?.(row); }}
                             >
-                              {renderCell(row, col.id)}
-                            </td>
+                              <td className={`px-3 py-2 text-center sticky left-0 z-10 ${isSelected ? '!bg-blue-50' : '!bg-slate-50'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleRowSelect(row.id)}
+                                  className="rounded-sm border-gray-300 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5 cursor-pointer"
+                                />
+                              </td>
+                              {columns.map(col => {
+                                if (visibleCols[col.id] === false) return null;
+                                const isFirstVisible = col.id === columns.find(c => visibleCols[c.id] !== false)?.id;
+                                const stickyTd = isFirstVisible ? `sticky left-[44px] z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)] ${isSelected ? '!bg-blue-50' : '!bg-slate-50'}` : '';
+                                return (
+                                  <td
+                                    key={col.id}
+                                    data-col={col.id}
+                                    className={`px-4 py-2 overflow-hidden text-ellipsis ${col.align === 'right' ? 'text-right' : ''} truncate ${stickyTd}`}
+                                    style={{ width: colWidths[col.id] || col.width }}
+                                  >
+                                    {renderChildCell(row, col.id)}
+                                  </td>
+                                );
+                              })}
+                              <td style={{ width: 60 }} />
+                              <td className="px-2 py-2 text-center text-slate-300 group-hover:text-slate-500 transition-colors duration-200" style={{ width: 80 }}>
+                                {canUpdate && isOwner(row) && (
+                                  <button
+                                    onClick={() => onEditRecord?.(row)}
+                                    className="p-1 hover:text-brand-600 cursor-pointer inline-flex"
+                                    title="編輯紀錄"
+                                  >
+                                    <PencilSimple size={16} />
+                                  </button>
+                                )}
+                                {canDelete && isOwner(row) && (
+                                  <button
+                                    onClick={() => onDelete?.(row.id)}
+                                    className="p-1 hover:text-red-500 cursor-pointer inline-flex"
+                                    title="刪除"
+                                  >
+                                    <Trash size={16} />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
                           );
                         })}
-
-                        {/* 固定的操作按鈕欄位 */}
-                        <td className="px-2 py-2 text-center text-gray-300 group-hover:text-gray-500 transition-colors" style={{ width: 80 }}>
-                          {canUpdate && isOwner(row) && (
-                          <button
-                            onClick={() => onEditRecord?.(row)}
-                            className="p-1 hover:text-brand-600 cursor-pointer inline-flex"
-                            title="編輯紀錄"
-                          >
-                            <PencilSimple size={16} />
-                          </button>
-                          )}
-                          {canDelete && isOwner(row) && (
-                            <button
-                              onClick={() => onDelete?.(row.id)}
-                              className="p-1 hover:text-red-500 cursor-pointer inline-flex"
-                              title="刪除"
-                            >
-                              <Trash size={16} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                      </Fragment>
                     );
                   })
                 )}
@@ -786,7 +1167,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           <div className="border-t border-fluent-border px-4 py-2 bg-white flex items-center justify-between z-20 shrink-0">
             <div className="flex items-center gap-3">
               <span className="text-[11px] text-gray-500 font-medium">
-                顯示 {totalItems === 0 ? '0-0' : `${startIdx + 1}-${endIdx}`} 筆，共 {totalItems} 筆
+                顯示 {totalGroups === 0 ? '0' : `${startIdx + 1}-${endIdx}`} 組，共 {totalGroups} 組 ({totalRecords} 筆)
               </span>
               <select
                 value={pageSize}
@@ -824,6 +1205,30 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           </div>
         </div>
       </div>
+
+      {/* ── Inline Prompt Modal (replaces window.prompt) ── */}
+      {inlinePrompt.open && (
+        <>
+          <div className="fixed inset-0 z-[9998] bg-slate-900/40 backdrop-blur-sm" onClick={handleInlinePromptCancel} />
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 pointer-events-auto" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Pipeline Portal 系統提示</h3>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">{inlinePrompt.title}</label>
+              <input
+                ref={inlinePromptRef}
+                autoFocus
+                defaultValue={inlinePrompt.defaultValue}
+                className="w-full bg-slate-50/80 border border-transparent rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-brand-500/30 focus:border-brand-300 outline-none transition-colors duration-200"
+                onKeyDown={e => { if (e.key === 'Enter') handleInlinePromptOk(); }}
+              />
+              <div className="flex items-center justify-end gap-3 mt-5">
+                <button onClick={handleInlinePromptCancel} className="px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 rounded-xl transition-colors duration-200">取消</button>
+                <button onClick={handleInlinePromptOk} className="px-5 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-colors duration-200 shadow-sm">確定</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

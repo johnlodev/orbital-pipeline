@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   List,
   Table,
@@ -9,15 +10,18 @@ import {
   LockKey,
   X,
   Lock,
+  CloudArrowUp,
 } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 
 const navItems = [
-  { key: 'table', label: '商機總表', icon: Table },
+  { key: 'aibs', label: 'AIBS List', icon: Table },
+  { key: 'caip', label: 'CAIP List', icon: CloudArrowUp },
   { key: 'dashboard', label: 'Dashboard', icon: ChartPieSlice },
 ];
 
-export default function Sidebar({ currentView, setCurrentView, onOpenSettings, session, isSuperAdmin }) {
+export default function Sidebar({ currentView, setCurrentView, onOpenSettings, session, isSuperAdmin, isMobileOpen = false, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
   const [pwForm, setPwForm] = useState({ oldPw: '', newPw: '', confirmPw: '' });
@@ -28,9 +32,9 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
 
   async function handleChangePassword() {
     const { oldPw, newPw, confirmPw } = pwForm;
-    if (!oldPw || !newPw || !confirmPw) return alert('請填寫所有欄位');
-    if (newPw !== confirmPw) return alert('新密碼與確認新密碼不一致');
-    if (newPw.length < 6) return alert('新密碼長度至少 6 個字元');
+    if (!oldPw || !newPw || !confirmPw) return toast.error('請填寫所有欄位');
+    if (newPw !== confirmPw) return toast.error('新密碼與確認新密碼不一致');
+    if (newPw.length < 6) return toast.error('新密碼長度至少6個字元');
 
     setPwLoading(true);
     try {
@@ -42,11 +46,11 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
 
-      alert('✅ 密碼修改成功！');
+      toast.success('密碼修改成功！');
       setPwForm({ oldPw: '', newPw: '', confirmPw: '' });
       setShowChangePw(false);
     } catch (err) {
-      alert('⚠️ ' + err.message);
+      toast.error(err.message);
     } finally {
       setPwLoading(false);
     }
@@ -54,12 +58,15 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
 
   return (
     <aside
-      className={`bg-white border-r border-slate-200 text-slate-600 flex-shrink-0 flex-col z-40 hidden md:flex relative transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
-        collapsed ? 'w-[72px]' : 'w-64'
-      }`}
+      className={`bg-slate-50 border-r border-slate-200 text-slate-600 flex-shrink-0 flex-col z-50
+        fixed inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]
+        ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:flex md:transition-[width] md:z-40
+        ${collapsed ? 'md:w-[72px]' : 'md:w-64'}
+      `}
     >
       {/* Logo Area */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 transition-all">
+      <div className="h-14 flex items-center justify-between px-4 border-b border-slate-100">
         {!collapsed && (
           <div className="flex items-center overflow-hidden">
             <img src="/mtglogo.png" alt="MetaAge Logo" className="w-8 h-8 object-contain min-w-[24px]" />
@@ -68,9 +75,17 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
             </span>
           </div>
         )}
+        {/* Mobile close button */}
+        <button
+          onClick={onMobileClose}
+          className="text-slate-400 hover:text-slate-700 focus:outline-none p-1.5 rounded-xl hover:bg-slate-100 transition-colors duration-200 flex md:hidden items-center justify-center cursor-pointer"
+        >
+          <X size={20} />
+        </button>
+        {/* Desktop collapse button */}
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="text-slate-400 hover:text-slate-700 focus:outline-none p-1.5 rounded hover:bg-slate-100 transition-colors flex items-center justify-center"
+          className="text-slate-400 hover:text-slate-700 focus:outline-none p-1.5 rounded-xl hover:bg-slate-100 transition-colors duration-200 hidden md:flex items-center justify-center cursor-pointer"
         >
           <List size={20} />
         </button>
@@ -86,10 +101,10 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
             <button
               key={item.key}
               onClick={() => setCurrentView(item.key)}
-              className={`flex items-center p-2.5 rounded-lg transition-colors group relative w-full ${
+              className={`flex items-center p-2.5 rounded-xl transition-colors duration-200 group relative w-full font-medium text-sm border ${
                 isActive
-                  ? 'bg-blue-50 text-[#0078d4]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  ? 'bg-white text-brand-600 shadow-[var(--shadow-soft-sm)] border-slate-200/60'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 border-transparent'
               } ${collapsed ? 'justify-center px-0' : ''}`}
             >
               <Icon size={20} weight={isActive ? 'fill' : 'regular'} className="min-w-[24px]" />
@@ -109,10 +124,10 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
         {isSuperAdmin && (
           <button
             onClick={() => setCurrentView('admin')}
-            className={`flex items-center p-2.5 rounded-lg transition-colors group relative w-full ${
+            className={`flex items-center p-2.5 rounded-xl transition-colors duration-200 group relative w-full font-medium text-sm border ${
               currentView === 'admin'
-                ? 'bg-red-50 text-red-600'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-white text-red-600 shadow-[var(--shadow-soft-sm)] border-slate-200/60'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 border-transparent'
             } ${collapsed ? 'justify-center px-0' : ''}`}
           >
             <ShieldCheck size={20} weight={currentView === 'admin' ? 'fill' : 'regular'} className="min-w-[24px]" />
@@ -127,7 +142,7 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
         {/* Settings */}
         <button
           onClick={onOpenSettings}
-          className={`flex items-center p-2.5 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors group relative w-full mt-2 border-t border-slate-200 pt-3 ${
+          className={`flex items-center p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors duration-200 group relative w-full mt-2 border-t border-slate-100 pt-3 ${
             collapsed ? 'justify-center px-0' : ''
           }`}
         >
@@ -141,46 +156,48 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
       </nav>
 
       {/* User Profile */}
-      <div className={`p-4 border-t border-slate-200 flex items-center transition-all ${collapsed ? 'justify-center px-0' : ''}`}>
-        <div className="relative min-w-[32px]">
-          <div className="w-8 h-8 rounded-lg bg-[#0078d4] flex items-center justify-center text-white text-sm font-bold">
-            {displayName.charAt(0).toUpperCase()}
+      <div className={`${collapsed ? 'p-2' : 'p-3'}`}>
+        <div className={`bg-white rounded-xl border border-slate-100 shadow-[var(--shadow-soft-xs)] flex items-center ${collapsed ? 'justify-center p-2' : 'p-3'}`}>
+          <div className="relative min-w-[32px]">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full pointer-events-none" />
           </div>
-          <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full pointer-events-none" />
+          {!collapsed && (
+            <div className="ml-3 flex-1 min-w-0">
+              <p className="text-sm text-slate-800 font-medium truncate">{displayName}</p>
+              <p className="text-[11px] text-slate-400 truncate">{userEmail}</p>
+            </div>
+          )}
+          {!collapsed && (
+            <button
+              onClick={() => setShowChangePw(true)}
+              title="修改密碼"
+              className="ml-1 p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors duration-200 cursor-pointer"
+            >
+              <LockKey size={16} />
+            </button>
+          )}
+          {!collapsed && (
+            <button
+              onClick={() => supabase.auth.signOut()}
+              title="登出"
+              className="ml-1 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors duration-200 cursor-pointer"
+            >
+              <SignOut size={16} />
+            </button>
+          )}
         </div>
-        {!collapsed && (
-          <div className="ml-3 flex-1 min-w-0">
-            <p className="text-sm text-slate-800 font-medium truncate">{displayName}</p>
-            <p className="text-[11px] text-slate-400 truncate">{userEmail}</p>
-          </div>
-        )}
-        {!collapsed && (
-          <button
-            onClick={() => setShowChangePw(true)}
-            title="修改密碼"
-            className="ml-1 p-1.5 rounded text-slate-400 hover:text-[#0078d4] hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <LockKey size={16} />
-          </button>
-        )}
-        {!collapsed && (
-          <button
-            onClick={() => supabase.auth.signOut()}
-            title="登出"
-            className="ml-1 p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <SignOut size={16} />
-          </button>
-        )}
       </div>
 
       {/* Change Password Modal */}
       {showChangePw && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowChangePw(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-[400px] p-6" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm px-4" onClick={() => setShowChangePw(false)}>
+          <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-white/50 w-full max-w-[400px] p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">修改密碼</h2>
-              <button onClick={() => setShowChangePw(false)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
+              <h2 className="text-lg font-bold text-slate-800">修改密碼</h2>
+              <button onClick={() => setShowChangePw(false)} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-200 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -191,15 +208,15 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
                 { key: 'confirmPw', label: '確認新密碼', placeholder: '再次輸入新密碼' },
               ].map(f => (
                 <div key={f.key}>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{f.label}</label>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">{f.label}</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                       type="password"
                       value={pwForm[f.key]}
                       onChange={e => setPwForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                       placeholder={f.placeholder}
-                      className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:border-[#0078d4] focus:ring-2 focus:ring-blue-100 outline-none transition-all text-gray-800"
+                      className="w-full pl-10 pr-3 py-2.5 bg-slate-50/80 border border-transparent rounded-xl text-sm text-slate-700 placeholder-slate-400 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-brand-500/30 focus:border-brand-300 outline-none transition-colors duration-200"
                     />
                   </div>
                 </div>
@@ -208,13 +225,15 @@ export default function Sidebar({ currentView, setCurrentView, onOpenSettings, s
             {pwForm.newPw && pwForm.confirmPw && pwForm.newPw !== pwForm.confirmPw && (
               <p className="text-xs text-red-500 mt-2">⚠️ 新密碼與確認新密碼不一致</p>
             )}
-            <button
+            <motion.button
+              whileTap={{ scale: 0.97 }}
               onClick={handleChangePassword}
               disabled={pwLoading}
-              className="w-full mt-4 py-2.5 bg-[#0078d4] hover:bg-[#106ebe] text-white font-semibold text-sm rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="relative overflow-hidden w-full mt-4 py-2.5 bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-semibold text-sm rounded-xl shadow-[var(--shadow-soft-sm)] hover:shadow-[var(--shadow-glow-brand)] transition-shadow duration-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {pwLoading ? '處理中...' : '確認修改'}
-            </button>
+              <span className="absolute inset-0 shimmer pointer-events-none" />
+              <span className="relative z-10">{pwLoading ? '處理中...' : '確認修改'}</span>
+            </motion.button>
           </div>
         </div>
       )}

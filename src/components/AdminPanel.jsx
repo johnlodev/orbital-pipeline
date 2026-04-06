@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ShieldCheck, FloppyDisk, Plus, Trash, ArrowsCounterClockwise, SpinnerGap,
 } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 
 const ROLE_OPTIONS = ['SuperAdmin', 'PM', 'Sales', 'Guest'];
@@ -11,7 +12,7 @@ const VIEW_FIELDS = [
   { key: 'view_pm_dist',    label: 'PM 績效' },
 ];
 
-export default function AdminPanel({ onPermissionsChanged }) {
+export default function AdminPanel({ onPermissionsChanged, showConfirm }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
@@ -27,7 +28,7 @@ export default function AdminPanel({ onPermissionsChanged }) {
       if (error) throw error;
       setUsers(data || []);
     } catch (err) {
-      alert('⚠️ 載入權限清單失敗：' + err.message);
+      toast.error('載入權限清單失敗：' + err.message);
     } finally {
       setLoading(false);
     }
@@ -52,10 +53,10 @@ export default function AdminPanel({ onPermissionsChanged }) {
         })
         .eq('email', user.email);
       if (error) throw error;
-      alert('✅ 權限更新成功！');
+      toast.success('權限更新成功！');
       onPermissionsChanged?.();
     } catch (err) {
-      alert('❌ 儲存失敗：' + err.message);
+      toast.error('儲存失敗：' + err.message);
     } finally {
       setSaving(null);
     }
@@ -66,7 +67,7 @@ export default function AdminPanel({ onPermissionsChanged }) {
     const email = newEmail.trim().toLowerCase();
     if (!email) return;
     if (users.some(u => u.email === email)) {
-      alert('此信箱已存在清單中。');
+      toast.error('此信箱已存在清單中。');
       return;
     }
     try {
@@ -75,23 +76,24 @@ export default function AdminPanel({ onPermissionsChanged }) {
       if (error) throw error;
       setNewEmail('');
       await fetchUsers();
-      alert('✅ 使用者已成功新增！');
+      toast.success('使用者已成功新增！');
     } catch (err) {
-      alert('⚠️ 新增失敗：' + err.message);
+      toast.error('新增失敗：' + err.message);
     }
   }
 
   // ── Delete a user ──
   async function handleDelete(email) {
-    if (!window.confirm(`確定要移除「${email}」的權限設定嗎？`)) return;
-    try {
-      const { error } = await supabase.from('user_permissions').delete().eq('email', email);
-      if (error) throw error;
-      await fetchUsers();
-      alert('✅ 已成功移除該使用者權限。');
-    } catch (err) {
-      alert('⚠️ 刪除失敗：' + err.message);
-    }
+    showConfirm?.(`確定要移除「${email}」的權限設定嗎？`, async () => {
+      try {
+        const { error } = await supabase.from('user_permissions').delete().eq('email', email);
+        if (error) throw error;
+        await fetchUsers();
+        toast.success('已成功移除該使用者權限。');
+      } catch (err) {
+        toast.error('刪除失敗：' + err.message);
+      }
+    });
   }
 
   // ── Optimistic local state mutation ──

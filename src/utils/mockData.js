@@ -24,6 +24,12 @@ export const dictData = {
     { label: 'L3', code: 'L3' },
     { label: 'L4', code: 'L4' },
   ],
+  segment: [
+    { label: 'Enterprise', code: 'Enterprise' },
+    { label: 'SMB', code: 'SMB' },
+    { label: 'Government', code: 'Government' },
+    { label: 'Education', code: 'Education' },
+  ],
 };
 
 export const dictTitles = {
@@ -32,6 +38,7 @@ export const dictTitles = {
   reqType: 'Type',
   product: 'Cat.',
   stage: 'Stage',
+  segment: 'Segment',
 };
 
 // ===== Mock 商機資料 (50 筆，涵蓋 2026 全年 1–12 月) =====

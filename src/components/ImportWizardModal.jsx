@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import {
   X, MicrosoftExcelLogo, DownloadSimple, CheckCircle, Table as TableIcon,
 } from '@phosphor-icons/react';
 
 // System fields for column mapping
-const SYSTEM_FIELDS = [
+const SHARED_FIELDS = [
   { id: 'skip', label: '忽略此欄 (Skip)' },
   { id: 'enduser', label: 'EU' },
   { id: 'si', label: 'Partner' },
@@ -20,25 +20,56 @@ const SYSTEM_FIELDS = [
   { id: 'pm', label: 'PM' },
 ];
 
+// CAIP-only extra fields
+const CAIP_EXTRA_FIELDS = [
+  { id: 'segment', label: 'Segment' },
+  { id: 'disti_name', label: 'Disti' },
+  { id: 'sales_stage', label: 'Sales Stage' },
+  { id: 'referral_id', label: 'Referral ID' },
+  { id: 'acr_start_month', label: 'ACR Start Month' },
+  { id: 'acr_mom', label: 'ACR MoM' },
+  { id: 'jul', label: 'Jul' }, { id: 'aug', label: 'Aug' }, { id: 'sep', label: 'Sep' },
+  { id: 'oct', label: 'Oct' }, { id: 'nov', label: 'Nov' }, { id: 'dec', label: 'Dec' },
+  { id: 'jan', label: 'Jan' }, { id: 'feb', label: 'Feb' }, { id: 'mar', label: 'Mar' },
+  { id: 'apr', label: 'Apr' }, { id: 'may', label: 'May' }, { id: 'jun', label: 'Jun' },
+  { id: 'q1', label: 'Q1' }, { id: 'q2', label: 'Q2' }, { id: 'q3', label: 'Q3' }, { id: 'q4', label: 'Q4' },
+];
+
+const CAIP_NUM_IDS = new Set(['acr_mom','jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','q1','q2','q3','q4']);
+
 // Auto-match header text to field id
-function autoMatchField(headerText) {
+function autoMatchField(headerText, isCAIP) {
   const h = headerText.trim();
   if (h.includes('EU') || h.includes('客戶')) return 'enduser';
   if (h.includes('Partner') || h.includes('代理')) return 'si';
   if (h.includes('Category') || h.includes('產品') || h.includes('Cat.')) return 'product';
   if (h.includes('Type') || h.includes('類型')) return 'reqType';
-  if (h.includes('Sales') || h.includes('業務')) return 'sales';
+  if (h.includes('Sales') && !h.includes('Stage') || h.includes('業務')) return 'sales';
   if (h.includes('PM')) return 'pm';
   if (h.includes('SKU') || h.includes('明細')) return 'sku';
   if (h.includes('Quantity') || h.includes('數量') || h.includes('套數') || h.includes('QTY')) return 'quantity';
   if (h.includes('NTM') || h.includes('金額')) return 'amount';
-  if (h.includes('日') || h.includes('時間') || h.includes('POD')) return 'date';
-  if (h.includes('Stage') || h.includes('階段')) return 'stage';
+  if (/\b日|\b時間|\bPOD/i.test(h)) return 'date';
+  if (h === 'Stage' || h.includes('階段')) return 'stage';
   if (h.includes('Note') || h.includes('案況')) return 'notes';
+  // CAIP auto-match
+  if (isCAIP) {
+    const lower = h.toLowerCase();
+    if (lower === 'segment') return 'segment';
+    if (lower.includes('disti')) return 'disti_name';
+    if (lower.includes('sales stage') || lower === 'sales_stage') return 'sales_stage';
+    if (lower.includes('referral')) return 'referral_id';
+    if (lower.includes('acr start') || lower === 'acr_start_month') return 'acr_start_month';
+    if (lower.includes('acr mom') || lower === 'acr_mom') return 'acr_mom';
+    const monthMatch = CAIP_EXTRA_FIELDS.find(f => f.label.toLowerCase() === lower && CAIP_NUM_IDS.has(f.id));
+    if (monthMatch) return monthMatch.id;
+  }
   return 'skip';
 }
 
-export default function ImportWizardModal({ isOpen, onClose, dictionary, onImport }) {
+export default function ImportWizardModal({ isOpen, onClose, dictionary, onImport, viewMode = 'AIBS' }) {
+  const isCAIP = viewMode === 'CAIP';
+  const SYSTEM_FIELDS = useMemo(() => isCAIP ? [...SHARED_FIELDS, ...CAIP_EXTRA_FIELDS] : SHARED_FIELDS, [isCAIP]);
   const [parsedHeaders, setParsedHeaders] = useState([]);
   const [parsedData, setParsedData] = useState([]);
   const [colMapping, setColMapping] = useState([]);
@@ -69,7 +100,7 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'Orbital_Pipeline_Import_Template.csv';
+    link.download = isCAIP ? 'CAIP_Pipeline_Import_Template.csv' : 'AIBS_Pipeline_Import_Template.csv';
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -95,7 +126,7 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
       const data = lines.slice(1).map(l => l.split(separator).map(c => c.trim()));
 
       // Auto-match columns
-      const mapping = headers.map(h => autoMatchField(h));
+      const mapping = headers.map(h => autoMatchField(h, isCAIP));
 
       setParsedHeaders(headers);
       setParsedData(data);
@@ -175,7 +206,7 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
         enduser: mapped.enduser || '未提供',
         si: mapped.si || '-',
         reqType: mapped.reqType || '-',
-        product: mapped.product || '-',
+        product: isCAIP ? 'Azure' : (mapped.product || '-'),
         sku: mapped.sku || '-',
         quantity,
         amount,
@@ -184,6 +215,19 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
         sales: resolveDictCode('sales', mapped.sales),
         pm: resolveDictCode('pm', mapped.pm),
         notes: mapped.notes || '',
+        // CAIP extended fields
+        ...(isCAIP ? {
+          segment: mapped.segment || '',
+          disti_name: mapped.disti_name || '',
+          sales_stage: mapped.sales_stage || '',
+          referral_id: mapped.referral_id || '',
+          acr_start_month: mapped.acr_start_month || '',
+          ...Object.fromEntries([...CAIP_NUM_IDS].map(k => {
+            let v = mapped[k] ? Number(String(mapped[k]).replace(/[^0-9.-]/g, '')) : 0;
+            if (isNaN(v)) v = 0;
+            return [k, v];
+          })),
+        } : {}),
       };
     });
 
@@ -266,6 +310,12 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
                   點擊下方虛線框，按下 Ctrl+V 貼上。系統會自動驗證字典檔，零錯誤即匯入。
                 </p>
               </div>
+            </div>
+
+            {/* Grouping Tip */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800 flex items-start gap-2 -mt-2">
+              <span className="text-lg leading-none mt-0.5">💡</span>
+              <span><strong>溫馨提示：</strong>若要將多筆商機群組在總表的同一列，請確保它們的「EU (最終客戶)」與「PARTNER」名稱完全一致。</span>
             </div>
 
             {/* Paste area + Preview */}

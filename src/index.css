@@ -1,23 +1,44 @@
 @import "tailwindcss";
 
-/* ===== Orbital Pipeline Theme (from backup_index.html) ===== */
+/* ===== Orbital Pipeline Theme (Tailwind v4 @theme) ===== */
 @theme {
-  /* Fluent Design System Colors */
-  --color-fluent-bg: #faf9f8;
+  /* ── Fluent Design System Colors ── */
+  --color-fluent-bg: #F8FAFC;
   --color-fluent-hover: #f3f2f1;
   --color-fluent-border: #e1dfdd;
   --color-fluent-text: #323130;
   --color-fluent-muted: #605e5c;
 
-  /* Microsoft Brand Colors */
+  /* ── Microsoft Brand Colors ── */
   --color-brand-50: #eff6ff;
   --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
   --color-brand-500: #0078d4;
   --color-brand-600: #005a9e;
   --color-brand-700: #004578;
   --color-brand-900: #1e3a8a;
 
-  /* Font Family */
+  /* ── Surface / Card system ── */
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: rgba(255, 255, 255, 0.80);
+
+  /* ── Soft Shadows (layered for depth) ── */
+  --shadow-soft-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-soft-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.05);
+  --shadow-soft-md: 0 8px 30px rgba(0, 0, 0, 0.04);
+  --shadow-soft-lg: 0 12px 40px rgba(0, 0, 0, 0.06);
+  --shadow-glow-brand: 0 0 20px rgba(0, 120, 212, 0.15);
+
+  /* ── Border radius tokens ── */
+  --radius-card: 1rem;
+  --radius-button: 0.75rem;
+  --radius-badge: 0.5rem;
+  --radius-full: 9999px;
+
+  /* ── Font Family ── */
   --font-sans: 'Inter', 'Noto Sans TC', 'Segoe UI', sans-serif;
 }
 
@@ -27,4 +48,37 @@ body {
   background-color: var(--color-fluent-bg);
   color: var(--color-fluent-text);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== Reusable Utility Classes ===== */
+
+/* Glassmorphism backdrop */
+.glass {
+  background: var(--color-surface-overlay);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Dot pattern background (subtle texture) */
+.dot-pattern {
+  background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Shimmer sweep for CTA buttons */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.25) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
 }

@@ -1,5 +1,28 @@
 import { useState, useEffect } from 'react';
-import { X, PencilLine, FloppyDisk, Trash } from '@phosphor-icons/react';
+import { X, PencilLine, FloppyDisk, Trash, Plus, Minus, Copy } from '@phosphor-icons/react';
+import { toast } from 'sonner';
+
+/* ── CAIP 欄位定義 ── */
+const CAIP_TEXT_KEYS = ['segment', 'disti_name', 'sales_stage', 'referral_id', 'acr_start_month'];
+const CAIP_NUM_KEYS = [
+  'acr_mom', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+  'q1', 'q2', 'q3', 'q4',
+];
+const CAIP_LABELS = {
+  segment: 'Segment', disti_name: 'Disti', sales_stage: 'Sales Stage',
+  referral_id: 'Referral ID', acr_start_month: 'ACR Start Month', acr_mom: 'ACR/Month',
+  jul: 'Jul', aug: 'Aug', sep: 'Sep', oct: 'Oct', nov: 'Nov', dec: 'Dec',
+  jan: 'Jan', feb: 'Feb', mar: 'Mar', apr: 'Apr', may: 'May', jun: 'Jun',
+  q1: 'Q1', q2: 'Q2', q3: 'Q3', q4: 'Q4',
+};
+
+function emptyCaipFields() {
+  const obj = {};
+  for (const k of CAIP_TEXT_KEYS) obj[k] = '';
+  for (const k of CAIP_NUM_KEYS) obj[k] = 0;
+  return obj;
+}
 
 const emptyForm = {
   enduser: '',
@@ -14,32 +37,117 @@ const emptyForm = {
   sales: '',
   pm: '',
   notes: '',
+  ...emptyCaipFields(),
 };
 
-export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns, dictionary }) {
+export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns, dictionary, viewMode = 'AIBS', showConfirm }) {
   const [form, setForm] = useState({ ...emptyForm });
+  const [newItems, setNewItems] = useState([{ ...emptyForm }]);
 
   const dictData = dictionary || {};
-
+  const isCAIP = viewMode === 'CAIP';
   const isEditMode = !!editingRecord;
 
   // When editingRecord changes, populate form
   useEffect(() => {
     if (editingRecord) {
-      setForm({
-        ...emptyForm,
-        ...editingRecord,
-        quantity: editingRecord.quantity ?? '',
-        amount: editingRecord.amount ?? '',
-      });
+      const ef = { ...emptyForm };
+      // Copy all known fields
+      for (const k of Object.keys(ef)) {
+        if (editingRecord[k] !== undefined && editingRecord[k] !== null) {
+          ef[k] = editingRecord[k];
+        }
+      }
+      // Copy custom column values (not in emptyForm)
+      if (customColumns) {
+        for (const col of customColumns) {
+          if (editingRecord[col.id] !== undefined && editingRecord[col.id] !== null) {
+            ef[col.id] = editingRecord[col.id];
+          }
+        }
+      }
+      ef.quantity = editingRecord.quantity ?? '';
+      ef.amount = editingRecord.amount ?? '';
+      setForm(ef);
     } else {
       setForm({ ...emptyForm });
+      setNewItems([{ ...emptyForm }]);
     }
   }, [editingRecord]);
 
-  const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+  const set = (key, value) => setForm((prev) => {
+    const next = { ...prev, [key]: value };
+    // Auto-calc quarterly sums
+    if (['jul', 'aug', 'sep'].includes(key)) {
+      next.q1 = (Number(next.jul) || 0) + (Number(next.aug) || 0) + (Number(next.sep) || 0);
+    }
+    if (['oct', 'nov', 'dec'].includes(key)) {
+      next.q2 = (Number(next.oct) || 0) + (Number(next.nov) || 0) + (Number(next.dec) || 0);
+    }
+    if (['jan', 'feb', 'mar'].includes(key)) {
+      next.q3 = (Number(next.jan) || 0) + (Number(next.feb) || 0) + (Number(next.mar) || 0);
+    }
+    if (['apr', 'may', 'jun'].includes(key)) {
+      next.q4 = (Number(next.apr) || 0) + (Number(next.may) || 0) + (Number(next.jun) || 0);
+    }
+    // Auto-calc NTM = Q1+Q2+Q3+Q4
+    const months = ['jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun'];
+    if (months.includes(key)) {
+      const q1 = (Number(next.jul) || 0) + (Number(next.aug) || 0) + (Number(next.sep) || 0);
+      const q2 = (Number(next.oct) || 0) + (Number(next.nov) || 0) + (Number(next.dec) || 0);
+      const q3 = (Number(next.jan) || 0) + (Number(next.feb) || 0) + (Number(next.mar) || 0);
+      const q4 = (Number(next.apr) || 0) + (Number(next.may) || 0) + (Number(next.jun) || 0);
+      next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
+      next.amount = q1 + q2 + q3 + q4;
+    }
+    return next;
+  });
 
-  function handleSave() {
+  const setNewItem = (idx, key, value) => {
+    setNewItems(prev => {
+      const arr = [...prev];
+      arr[idx] = { ...arr[idx], [key]: value };
+      // Auto quarterly sums
+      if (['jul','aug','sep'].includes(key)) {
+        arr[idx].q1 = (Number(arr[idx].jul)||0)+(Number(arr[idx].aug)||0)+(Number(arr[idx].sep)||0);
+      }
+      if (['oct','nov','dec'].includes(key)) {
+        arr[idx].q2 = (Number(arr[idx].oct)||0)+(Number(arr[idx].nov)||0)+(Number(arr[idx].dec)||0);
+      }
+      if (['jan','feb','mar'].includes(key)) {
+        arr[idx].q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
+      }
+      if (['apr','may','jun'].includes(key)) {
+        arr[idx].q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
+      }
+      const months = ['jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun'];
+      if (months.includes(key)) {
+        const q1 = (Number(arr[idx].jul)||0)+(Number(arr[idx].aug)||0)+(Number(arr[idx].sep)||0);
+        const q2 = (Number(arr[idx].oct)||0)+(Number(arr[idx].nov)||0)+(Number(arr[idx].dec)||0);
+        const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
+        const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
+        arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
+        arr[idx].amount = q1+q2+q3+q4;
+      }
+      return arr;
+    });
+  };
+
+  function addNewItem() {
+    setNewItems(prev => [...prev, { ...emptyForm }]);
+  }
+  function removeNewItem(idx) {
+    setNewItems(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
+  }
+  function handleDuplicate(idx) {
+    setNewItems(prev => {
+      const clone = { ...prev[idx] };
+      return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
+    });
+    toast.success(`已複製第 ${idx + 1} 筆品項`);
+  }
+
+  function validateRecord(rec) {
     const required = [
       { key: 'enduser', label: 'EU' },
       { key: 'si',      label: 'Partner' },
@@ -53,38 +161,354 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       { key: 'sales',   label: 'Sales' },
       { key: 'pm',      label: 'PM' },
     ];
+    if (isCAIP) {
+      required.push({ key: 'segment', label: 'Segment' });
+    }
     const missing = required.filter(f => {
-      const v = form[f.key];
+      const v = rec[f.key];
       return v === '' || v === null || v === undefined;
     });
-    if (missing.length > 0) {
-      alert('請填寫所有必填欄位（帶有 * 號的項目）！\n\n缺少：' + missing.map(f => f.label).join(', '));
-      return;
+    return missing;
+  }
+
+  function handleSave() {
+    if (isEditMode) {
+      const missing = validateRecord(form);
+      if (missing.length > 0) {
+        toast.error('請填寫所有必填欄位（帶有 * 號的項目）！\n缺少：' + missing.map(f => f.label).join(', '));
+        return;
+      }
+      const record = {
+        ...form,
+        quantity: form.quantity ? Number(form.quantity) : 0,
+        amount: form.amount ? Number(String(form.amount).replace(/,/g, '')) : 0,
+      };
+      for (const k of CAIP_NUM_KEYS) {
+        if (record[k] !== undefined) record[k] = Number(record[k]) || 0;
+      }
+      onSave(record);
+      setForm({ ...emptyForm });
+    } else {
+      // New mode — batch save
+      const items = newItems;
+      for (let i = 0; i < items.length; i++) {
+        const missing = validateRecord(items[i]);
+        if (missing.length > 0) {
+          toast.error(`第 ${i + 1} 筆缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
+          return;
+        }
+      }
+      const records = items.map(item => {
+        const record = {
+          ...item,
+          quantity: item.quantity ? Number(item.quantity) : 0,
+          amount: item.amount ? Number(String(item.amount).replace(/,/g, '')) : 0,
+        };
+        for (const k of CAIP_NUM_KEYS) {
+          if (record[k] !== undefined) record[k] = Number(record[k]) || 0;
+        }
+        return record;
+      });
+      onSave(records);
+      setNewItems([{ ...emptyForm }]);
     }
-    const record = {
-      ...form,
-      quantity: form.quantity ? Number(form.quantity) : 0,
-      amount: form.amount ? Number(String(form.amount).replace(/,/g, '')) : 0,
-    };
-    onSave(record);
-    setForm({ ...emptyForm });
   }
 
   function handleClose() {
     setForm({ ...emptyForm });
+    setNewItems([{ ...emptyForm }]);
     onClose();
   }
 
   function handleDelete() {
     if (!editingRecord?.id) return;
-    if (!window.confirm('確定要刪除這筆商機嗎？此操作無法復原。')) return;
-    onDelete?.(editingRecord.id);
+    showConfirm?.('確定要刪除這筆商機嗎？此操作無法復原。', () => {
+      onDelete?.(editingRecord.id, true);
+    });
   }
 
   const inputCls =
-    'w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none';
+    'w-full border border-gray-300 rounded px-3 py-2.5 text-[15px] focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none';
   const labelCls =
     'block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1';
+
+  /* ── Shared Form Fields (AIBS core) ── */
+  function renderCoreFields(data, setter) {
+    return (
+      <>
+        {/* EU / Partner */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              EU (最終客戶) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              className={inputCls}
+              value={data.enduser}
+              onChange={(e) => setter('enduser', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>
+              Partner <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              className={inputCls}
+              value={data.si}
+              onChange={(e) => setter('si', e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Type / Cat */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.reqType}
+              onChange={(e) => setter('reqType', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.reqType || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>
+              Cat. <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.product}
+              onChange={(e) => setter('product', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.product || [])
+                .filter(d => isCAIP ? d.code.toLowerCase() === 'azure' : d.code.toLowerCase() !== 'azure')
+                .map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* SKU / QTY */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              SKU <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              className={inputCls}
+              value={data.sku}
+              onChange={(e) => setter('sku', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>
+              QTY <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              className={inputCls}
+              placeholder="0"
+              value={data.quantity}
+              onChange={(e) => setter('quantity', e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* NTM / POD */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              NTM {!isCAIP && <span className="text-red-500">*</span>}
+              {isCAIP && <span className="text-gray-400 text-[10px] ml-1">(auto)</span>}
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-500 text-sm font-medium">NT$</span>
+              </div>
+              <input
+                type="text"
+                className={`${inputCls} pl-[3.25rem] font-mono`}
+                placeholder="0"
+                value={data.amount}
+                onChange={(e) => setter('amount', e.target.value)}
+                readOnly={isCAIP}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>
+              POD <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              className={inputCls}
+              value={data.date}
+              onChange={(e) => setter('date', e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Stage / Sales */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              Stage <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.stage}
+              onChange={(e) => setter('stage', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.stage || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>
+              Sales <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.sales}
+              onChange={(e) => setter('sales', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.sales || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* PM */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              PM <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.pm}
+              onChange={(e) => setter('pm', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.pm || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div />
+        </div>
+      </>
+    );
+  }
+
+  /* ── CAIP Extended Fields ── */
+  function renderCaipFields(data, setter) {
+    if (!isCAIP) return null;
+    const segmentOptions = dictData.segment || [];
+    return (
+      <div className="border-t border-gray-200 mt-2 pt-4">
+        <div className="text-[11px] font-semibold text-brand-600 uppercase tracking-wider mb-3">CAIP 擴充欄位</div>
+
+        {/* Segment / Disti / Sales Stage */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className={labelCls}>Segment <span className="text-red-500">*</span></label>
+            <select
+              className={inputCls}
+              value={data.segment}
+              onChange={(e) => setter('segment', e.target.value)}
+              required
+            >
+              <option value="">請選擇</option>
+              {segmentOptions.map((d) => (
+                <option key={d.code} value={d.code}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Disti</label>
+            <input type="text" className={inputCls} value={data.disti_name} onChange={(e) => setter('disti_name', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Sales Stage</label>
+            <input type="text" className={inputCls} value={data.sales_stage} onChange={(e) => setter('sales_stage', e.target.value)} />
+          </div>
+        </div>
+
+        {/* Referral ID / ACR Start Month / ACR MoM */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className={labelCls}>Referral ID</label>
+            <input type="text" className={inputCls} value={data.referral_id} onChange={(e) => setter('referral_id', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>ACR Start Month</label>
+            <input type="text" className={inputCls} value={data.acr_start_month} onChange={(e) => setter('acr_start_month', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>ACR/Month</label>
+            <input type="number" className={inputCls} value={data.acr_mom} onChange={(e) => setter('acr_mom', e.target.value)} />
+          </div>
+        </div>
+
+        {/* Monthly Fields: Jul–Dec */}
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 mt-2">Monthly Revenue (Jul – Jun)</div>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-2">
+          {['jul','aug','sep','oct','nov','dec'].map(m => (
+            <div key={m}>
+              <label className={labelCls}>{CAIP_LABELS[m]}</label>
+              <input type="number" className={inputCls} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+            </div>
+          ))}
+        </div>
+        {/* Monthly Fields: Jan–Jun */}
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-3">
+          {['jan','feb','mar','apr','may','jun'].map(m => (
+            <div key={m}>
+              <label className={labelCls}>{CAIP_LABELS[m]}</label>
+              <input type="number" className={inputCls} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+            </div>
+          ))}
+        </div>
+
+        {/* Quarterly Sums (read-only) */}
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Quarterly Totals (auto)</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {['q1','q2','q3','q4'].map(q => (
+            <div key={q}>
+              <label className={labelCls}>{CAIP_LABELS[q]}</label>
+              <input type="number" className={`${inputCls} bg-gray-50 font-mono`} value={data[q]} readOnly />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -96,17 +520,18 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         />
       )}
 
-      {/* Drawer – widened to max-w-4xl */}
+      {/* Drawer */}
       <div
-        className={`fixed top-0 right-0 h-full max-w-4xl w-full bg-white shadow-2xl z-[75] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+        className={`fixed top-0 right-0 h-full w-full md:max-w-4xl bg-white shadow-2xl z-[75] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] md:rounded-l-2xl ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-[#faf9f8] shrink-0">
+        <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-slate-50 shrink-0">
           <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
             <PencilLine weight="fill" className="text-brand-600" />
             {isEditMode ? '編輯商機需求' : '新增商機需求'}
+            {isCAIP && <span className="text-xs font-medium text-brand-500 bg-brand-50 px-2 py-0.5 rounded-full">CAIP</span>}
           </h2>
           <button
             onClick={handleClose}
@@ -117,224 +542,111 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         </div>
 
         {/* Form Body */}
-        <div className="p-6 flex-1 overflow-y-auto bg-white flex flex-col gap-4">
-          {/* EU / Partner */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                EU (最終客戶) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls}
-                value={form.enduser}
-                onChange={(e) => set('enduser', e.target.value)}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>
-                Partner <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls}
-                value={form.si}
-                onChange={(e) => set('si', e.target.value)}
-              />
-            </div>
-          </div>
+        <div className="px-4 md:px-6 py-6 flex-1 overflow-y-auto bg-slate-50 flex flex-col gap-4">
+          {isEditMode ? (
+            /* ── Edit Mode: single record ── */
+            <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100 flex flex-col gap-4">
+              {renderCoreFields(form, set)}
+              {renderCaipFields(form, set)}
 
-          {/* Type / Cat */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={form.reqType}
-                onChange={(e) => set('reqType', e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {(dictData.reqType || []).map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>
-                Cat. <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={form.product}
-                onChange={(e) => set('product', e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {(dictData.product || []).map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* SKU / QTY */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                SKU <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls}
-                value={form.sku}
-                onChange={(e) => set('sku', e.target.value)}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>
-                QTY <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="0"
-                value={form.quantity}
-                onChange={(e) => set('quantity', e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* NTM / POD */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                NTM <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 text-sm font-medium">NT$</span>
+              {/* Custom Columns */}
+              {customColumns && customColumns.length > 0 && (
+                <div className="border-t border-gray-100 my-2 pt-4">
+                  <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">自訂欄位</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {customColumns.map(col => (
+                      <div key={col.id}>
+                        <label className={labelCls}>{col.name}</label>
+                        <input
+                          type="text"
+                          className={inputCls}
+                          value={form[col.id] || ''}
+                          onChange={(e) => set(col.id, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  className={`${inputCls} pl-[3.25rem] font-mono`}
-                  placeholder="0"
-                  value={form.amount}
-                  onChange={(e) => set('amount', e.target.value)}
+              )}
+
+              {/* Notes */}
+              <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
+                <label className={labelCls}>Notes</label>
+                <textarea
+                  className="w-full flex-1 min-h-[120px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                  placeholder="請輸入詳細進度與備註..."
+                  value={form.notes}
+                  onChange={(e) => set('notes', e.target.value)}
                 />
               </div>
             </div>
-            <div>
-              <label className={labelCls}>
-                POD <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                className={inputCls}
-                value={form.date}
-                onChange={(e) => set('date', e.target.value)}
-              />
-            </div>
-          </div>
+          ) : (
+            /* ── New Mode: multi-item ── */
+            <>
+              {newItems.map((item, idx) => (
+                <div key={idx} className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100 flex flex-col gap-4 relative">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-semibold text-brand-600">品項 #{idx + 1}</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => handleDuplicate(idx)} title="複製此筆" className="text-brand-400 hover:text-brand-600 p-1 rounded hover:bg-brand-50 cursor-pointer transition-colors">
+                        <Copy size={16} />
+                      </button>
+                      {newItems.length > 1 && (
+                        <button onClick={() => removeNewItem(idx)} title="刪除此筆" className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50 cursor-pointer transition-colors">
+                          <Minus size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {renderCoreFields(item, (k, v) => setNewItem(idx, k, v))}
+                  {renderCaipFields(item, (k, v) => setNewItem(idx, k, v))}
 
-          {/* Stage / Sales */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                Stage <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={form.stage}
-                onChange={(e) => set('stage', e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {(dictData.stage || []).map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>
-                Sales <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={form.sales}
-                onChange={(e) => set('sales', e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {(dictData.sales || []).map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+                  {/* Custom Columns */}
+                  {customColumns && customColumns.length > 0 && (
+                    <div className="border-t border-gray-100 my-2 pt-4">
+                      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">自訂欄位</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {customColumns.map(col => (
+                          <div key={col.id}>
+                            <label className={labelCls}>{col.name}</label>
+                            <input
+                              type="text"
+                              className={inputCls}
+                              value={item[col.id] || ''}
+                              onChange={(e) => setNewItem(idx, col.id, e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-          {/* PM */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>
-                PM <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={inputCls}
-                value={form.pm}
-                onChange={(e) => set('pm', e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {(dictData.pm || []).map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div />
-          </div>
-
-          {/* Custom Columns */}
-          {customColumns && customColumns.length > 0 && (
-            <div className="border-t border-gray-100 my-2 pt-4">
-              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">自訂欄位</div>
-              <div className="grid grid-cols-2 gap-4">
-                {customColumns.map(col => (
-                  <div key={col.id}>
-                    <label className={labelCls}>{col.name}</label>
-                    <input
-                      type="text"
-                      className={inputCls}
-                      value={form[col.id] || ''}
-                      onChange={(e) => set(col.id, e.target.value)}
+                  {/* Notes */}
+                  <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
+                    <label className={labelCls}>Notes</label>
+                    <textarea
+                      className="w-full flex-1 min-h-[80px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                      placeholder="請輸入詳細進度與備註..."
+                      value={item.notes}
+                      onChange={(e) => setNewItem(idx, 'notes', e.target.value)}
                     />
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              ))}
 
-          {/* Notes */}
-          <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
-            <label className={labelCls}>Notes</label>
-            <textarea
-              className="w-full flex-1 min-h-[120px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
-              placeholder="請輸入詳細進度與備註..."
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-            />
-          </div>
+              {/* Add another item button */}
+              <button
+                onClick={addNewItem}
+                className="flex items-center justify-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 border border-dashed border-brand-300 rounded-xl py-3 hover:bg-brand-50 transition-colors cursor-pointer"
+              >
+                <Plus size={16} weight="bold" /> 再新增一筆
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Footer – delete (left) + cancel/save (right) */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-[#faf9f8] flex justify-between shrink-0">
+        {/* Footer – delete/total (left) + cancel/save (right) */}
+        <div className="px-4 md:px-6 py-4 border-t border-gray-200 bg-slate-50 flex justify-between items-center shrink-0">
           {isEditMode ? (
             <button
               onClick={handleDelete}
@@ -343,20 +655,27 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               <Trash size={16} /> 刪除此筆
             </button>
           ) : (
-            <div />
+            <div className="text-sm text-slate-600">
+              <span className="font-medium">預估總額：</span>
+              <span className="font-bold text-brand-600">
+                NT$ {newItems.reduce((sum, item) => sum + (Number(String(item.amount).replace(/,/g, '')) || 0), 0).toLocaleString()}
+              </span>
+              <span className="text-slate-400 ml-1.5 text-xs">({newItems.length} 筆品項)</span>
+            </div>
           )}
-          <div className="flex gap-2.5 ml-auto">
+          <div className="flex gap-2">
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded transition-colors border border-gray-300 bg-white cursor-pointer"
+              className="px-5 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded transition-colors cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <FloppyDisk size={16} /> {isEditMode ? '儲存變更' : '儲存'}
+              <FloppyDisk size={16} weight="bold" />
+              {isEditMode ? '儲存變更' : `儲存 (${newItems.length} 筆)`}
             </button>
           </div>
         </div>

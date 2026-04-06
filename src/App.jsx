@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
+import { Toaster, toast } from 'sonner'
+import { List, X } from '@phosphor-icons/react'
 import Sidebar from './components/Sidebar'
-import Header from './components/Header'
 import Dashboard from './components/Dashboard'
 import PipelineTable from './components/PipelineTable'
 import RecordDrawer from './components/RecordDrawer'
@@ -8,6 +9,7 @@ import SettingsModal from './components/SettingsModal'
 import ImportWizardModal from './components/ImportWizardModal'
 import AuthScreen from './components/AuthScreen'
 import AdminPanel from './components/AdminPanel'
+import ConfirmModal from './components/ConfirmModal'
 import { supabase } from './utils/supabaseClient'
 import { dictData as defaultDictData, mockData } from './utils/mockData'
 
@@ -39,13 +41,13 @@ function App() {
       </div>
     )
   }
-  if (!session) return <AuthScreen />
+  if (!session) return <><AuthScreen /><Toaster position="top-center" toastOptions={{ className: 'bg-white text-slate-700 border border-slate-200 shadow-sm text-sm font-sans', duration: 3000 }} /></>
 
   return <AuthenticatedApp session={session} />
 }
 
 function AuthenticatedApp({ session }) {
-  const [currentView, setCurrentView] = useState('table')
+  const [currentView, setCurrentView] = useState('aibs')
   const [dbData, setDbData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -53,17 +55,42 @@ function AuthenticatedApp({ session }) {
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
   const [dictionary, setDictionary] = useState(() => structuredClone(defaultDictData))
+  const [confirmState, setConfirmState] = useState({ open: false, message: '', onConfirm: null })
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   // ── DB ↔ Frontend 欄位名 mapping (DB: reqtype ↔ Frontend: reqType) ──
+  // CAIP 新增欄位全部使用 snake_case，前後端名稱一致（無需轉換），
+  // 但仍需確保 null → 空字串/0 的安全處理。
+  const CAIP_TEXT_FIELDS = ['segment', 'disti_name', 'sales_stage', 'referral_id', 'acr_start_month']
+  const CAIP_NUM_FIELDS = [
+    'acr_mom', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'q1', 'q2', 'q3', 'q4',
+  ]
+
   function fromDbRecord(row) {
     if (!row) return row
     const { reqtype, ...rest } = row
-    return { ...rest, reqType: reqtype }
+    const out = { ...rest, reqType: reqtype }
+    // CAIP text fields: null → ''
+    for (const f of CAIP_TEXT_FIELDS) {
+      if (out[f] == null) out[f] = ''
+    }
+    // CAIP numeric fields: null → 0
+    for (const f of CAIP_NUM_FIELDS) {
+      out[f] = out[f] != null ? Number(out[f]) : 0
+    }
+    return out
   }
   function toDbRecord(record) {
     if (!record) return record
     const { reqType, ...rest } = record
-    return { ...rest, reqtype: reqType }
+    const out = { ...rest, reqtype: reqType }
+    // 確保數字欄位寫入時為 number
+    for (const f of CAIP_NUM_FIELDS) {
+      if (out[f] !== undefined) out[f] = Number(out[f]) || 0
+    }
+    return out
   }
 
   // ── Dictionary: 從 Supabase dictionaries table 讀取，首次為空時自動 seed ──
@@ -109,7 +136,7 @@ function AuthenticatedApp({ session }) {
       }
 
       // 確保所有內建 key 都存在（即使 DB 中該類別無資料）
-      const builtinKeys = ['sales', 'pm', 'reqType', 'product', 'stage']
+      const builtinKeys = ['sales', 'pm', 'reqType', 'product', 'stage', 'segment']
       for (const key of builtinKeys) {
         if (!grouped[key]) grouped[key] = []
       }
@@ -179,7 +206,7 @@ function AuthenticatedApp({ session }) {
       setCurrentUserPermissions(data || null)
     } catch (err) {
       console.error('Permission fetch error:', err.message)
-      alert('⚠️ 權限資料載入失敗：' + err.message)
+      toast.error('權限資料載入失敗：' + err.message)
     }
   }
 
@@ -201,7 +228,7 @@ function AuthenticatedApp({ session }) {
       setDbData((data || []).map(fromDbRecord))
     } catch (err) {
       console.error('Supabase fetch error:', err.message)
-      alert('⚠️ 無法連線 Supabase，已載入本機測試資料。\n' + err.message)
+      toast.error('無法連線 Supabase，已載入本機測試資料。')
       setDbData(mockData)
     } finally {
       setIsLoading(false)
@@ -219,10 +246,10 @@ function AuthenticatedApp({ session }) {
       const { error } = await supabase.from('pipeline').insert(dbRecords)
       if (error) throw error
       await fetchData()
-      alert('✅ 已成功匯入 ' + records.length + ' 筆資料！')
+      toast.success('已成功匯入 ' + records.length + ' 筆資料！')
     } catch (err) {
       console.error('Import error:', err.message)
-      alert('⚠️ 匯入失敗：' + err.message)
+      toast.error('匯入失敗：' + err.message)
       // Optimistic fallback: 仍放入本地
       setDbData(prev => [...records, ...prev])
     }
@@ -231,15 +258,22 @@ function AuthenticatedApp({ session }) {
 
   // ── Delete: 先刪 Supabase，成功後 refetch ──
   async function handleDeleteRecord(id, skipConfirm = false) {
-    if (!skipConfirm && !window.confirm('確定要刪除這筆商機嗎？此操作無法復原。')) return
+    if (!skipConfirm) {
+      setConfirmState({ open: true, message: '確定要刪除這筆商機嗎？此操作無法復原。', onConfirm: () => executeDelete(id) })
+      return
+    }
+    await executeDelete(id)
+  }
+
+  async function executeDelete(id) {
     try {
       const { error } = await supabase.from('pipeline').delete().eq('id', id)
       if (error) throw error
       await fetchData()
-      alert('✅ 商機已成功刪除。')
+      toast.success('商機已成功刪除。')
     } catch (err) {
       console.error('Delete error:', err.message)
-      alert('⚠️ 刪除失敗：' + err.message)
+      toast.error('刪除失敗：' + err.message)
       setDbData(prev => prev.filter(item => item.id !== id))
     }
     setIsDrawerOpen(false)
@@ -262,9 +296,9 @@ function AuthenticatedApp({ session }) {
     }
     await fetchData()
     if (failCount === 0) {
-      alert(`✅ 已成功刪除 ${successCount} 筆商機`)
+      toast.success(`已成功刪除 ${successCount} 筆商機`)
     } else {
-      alert(`⚠️ 成功刪除 ${successCount} 筆，失敗 ${failCount} 筆`)
+      toast.warning(`成功刪除 ${successCount} 筆，失敗 ${failCount} 筆`)
     }
   }
 
@@ -278,7 +312,7 @@ function AuthenticatedApp({ session }) {
       if (error) throw error
     } catch (err) {
       console.error('Inline update error:', err.message)
-      alert('⚠️ 欄位更新失敗：' + err.message)
+      toast.error('欄位更新失敗：' + err.message)
       await fetchData() // rollback to server state
     }
   }
@@ -299,32 +333,43 @@ function AuthenticatedApp({ session }) {
   }
 
   // ── Create / Update: Drawer 儲存 → Supabase upsert ──
-  async function handleSaveRecord(record) {
+  async function handleSaveRecord(recordOrArray) {
     try {
       if (editingRecord?.id) {
-        // Update existing
+        // ── Edit mode: single record update ──
         const { error } = await supabase
           .from('pipeline')
-          .update(toDbRecord(record))
+          .update(toDbRecord(recordOrArray))
           .eq('id', editingRecord.id)
         if (error) throw error
+        await fetchData()
+        toast.success('資料已成功儲存！')
+      } else if (Array.isArray(recordOrArray)) {
+        // ── New mode (multi-item): bulk insert ──
+        const dbRecords = recordOrArray.map(r => ({ ...toDbRecord(r), created_by_email: currentUserEmail }))
+        const { error } = await supabase.from('pipeline').insert(dbRecords)
+        if (error) throw error
+        await fetchData()
+        toast.success(`已成功新增 ${recordOrArray.length} 筆商機！`)
       } else {
-        // Insert new
+        // ── New mode (single record fallback) ──
         const { error } = await supabase
           .from('pipeline')
-          .insert({ ...toDbRecord(record), created_by_email: currentUserEmail })
+          .insert({ ...toDbRecord(recordOrArray), created_by_email: currentUserEmail })
         if (error) throw error
+        await fetchData()
+        toast.success('資料已成功儲存！')
       }
-      await fetchData()
-      alert('✅ 資料已成功儲存！')
     } catch (err) {
       console.error('Save error:', err.message)
-      alert('⚠️ 儲存失敗：' + err.message)
+      toast.error('儲存失敗：' + err.message)
       // Optimistic fallback
       if (editingRecord?.id) {
-        setDbData(prev => prev.map(item => item.id === editingRecord.id ? { ...item, ...record } : item))
+        setDbData(prev => prev.map(item => item.id === editingRecord.id ? { ...item, ...recordOrArray } : item))
+      } else if (Array.isArray(recordOrArray)) {
+        setDbData(prev => [...recordOrArray.map((r, i) => ({ ...r, id: 'rec_' + Date.now() + '_' + i })), ...prev])
       } else {
-        setDbData(prev => [{ ...record, id: 'rec_' + Date.now() }, ...prev])
+        setDbData(prev => [{ ...recordOrArray, id: 'rec_' + Date.now() }, ...prev])
       }
     }
     setIsDrawerOpen(false)
@@ -337,28 +382,52 @@ function AuthenticatedApp({ session }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-fluent-bg text-fluent-text font-sans selection:bg-brand-100 selection:text-brand-900">
+      {/* Mobile Header — visible only on small screens */}
+      <div className="fixed top-0 left-0 right-0 z-[55] md:hidden flex items-center justify-between px-4 h-14 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <img src="/mtglogo.png" alt="MetaAge Logo" className="w-7 h-7 object-contain" />
+          <span className="font-bold text-slate-900 text-base tracking-wide">Pipeline Portal</span>
+        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(v => !v)}
+          className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors duration-200 cursor-pointer"
+        >
+          {isMobileMenuOpen ? <X size={22} /> : <List size={22} />}
+        </button>
+      </div>
+
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-[45] bg-slate-900/30 backdrop-blur-sm md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <Sidebar
         currentView={currentView}
-        setCurrentView={setCurrentView}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        setCurrentView={(v) => { setCurrentView(v); setIsMobileMenuOpen(false); }}
+        onOpenSettings={() => { setIsSettingsOpen(true); setIsMobileMenuOpen(false); }}
         session={session}
         isSuperAdmin={isSuperAdmin}
+        isMobileOpen={isMobileMenuOpen}
+        onMobileClose={() => setIsMobileMenuOpen(false)}
       />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative pt-14 md:pt-0">
         {/* Content Area */}
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-fluent-muted text-lg">載入中...</p>
           </div>
         ) : currentView === 'admin' && isSuperAdmin ? (
-          <AdminPanel onPermissionsChanged={fetchPermissions} />
+          <AdminPanel onPermissionsChanged={fetchPermissions} showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })} />
         ) : currentView === 'dashboard' ? (
           <Dashboard data={dbData} dictionary={dictionary} userRole={userRole} currentUserPermissions={currentUserPermissions} />
         ) : (
-          <PipelineTable data={dbData} onDelete={handleDeleteRecord} onBatchDelete={handleBatchDeleteRecords} onOpenDrawer={handleOpenNewDrawer} onEditRecord={handleEditRecord} onUpdateRecord={handleUpdateRecord} onOpenImport={() => setIsImportOpen(true)} dictionary={dictionary} customColumns={customColumns} setCustomColumns={setCustomColumns} userRole={userRole} currentUserPermissions={currentUserPermissions} currentUserEmail={currentUserEmail} />
+          <PipelineTable data={dbData} onDelete={handleDeleteRecord} onBatchDelete={handleBatchDeleteRecords} onOpenDrawer={handleOpenNewDrawer} onEditRecord={handleEditRecord} onUpdateRecord={handleUpdateRecord} onOpenImport={() => setIsImportOpen(true)} dictionary={dictionary} customColumns={customColumns} setCustomColumns={setCustomColumns} userRole={userRole} currentUserPermissions={currentUserPermissions} currentUserEmail={currentUserEmail} viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'} showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })} />
         )}
       </main>
 
@@ -371,6 +440,8 @@ function AuthenticatedApp({ session }) {
         editingRecord={editingRecord}
         customColumns={customColumns}
         dictionary={dictionary}
+        viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'}
+        showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })}
       />
 
       {/* Settings Modal */}
@@ -380,6 +451,8 @@ function AuthenticatedApp({ session }) {
         dictionary={dictionary}
         setDictionary={setDictionary}
         onDictionaryChanged={fetchDictionary}
+        onDataChanged={fetchData}
+        showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })}
       />
 
       {/* Import Wizard Modal */}
@@ -388,7 +461,19 @@ function AuthenticatedApp({ session }) {
         onClose={() => setIsImportOpen(false)}
         dictionary={dictionary}
         onImport={handleImportData}
+        viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'}
       />
+
+      {/* Confirm Modal (replaces window.confirm) */}
+      <ConfirmModal
+        isOpen={confirmState.open}
+        message={confirmState.message}
+        onConfirm={() => { confirmState.onConfirm?.(); setConfirmState({ open: false, message: '', onConfirm: null }); }}
+        onCancel={() => setConfirmState({ open: false, message: '', onConfirm: null })}
+      />
+
+      {/* Toast Notifications */}
+      <Toaster position="top-center" toastOptions={{ className: 'bg-white text-slate-700 border border-slate-200 shadow-sm text-sm font-sans', duration: 3000 }} />
     </div>
   )
 }
