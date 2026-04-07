@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, PencilLine, FloppyDisk, Trash, Plus, Minus, Copy } from '@phosphor-icons/react';
+import { X, PencilLine, FloppyDisk, Trash, Plus, Minus, Copy, ArrowClockwise } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 /* ── CAIP 欄位定義 ── */
@@ -21,12 +21,20 @@ function emptyCaipFields() {
   const obj = {};
   for (const k of CAIP_TEXT_KEYS) obj[k] = '';
   for (const k of CAIP_NUM_KEYS) obj[k] = 0;
+  obj.disti_name = 'MetaAge';
   return obj;
 }
 
-const emptyForm = {
+/* ── 共用資訊 (表頭) ── */
+const emptyCommon = {
   enduser: '',
   si: '',
+  sales: '',
+  pm: '',
+};
+
+/* ── 品項明細 (表身) ── */
+const emptyItem = {
   reqType: '',
   product: '',
   sku: '',
@@ -34,19 +42,26 @@ const emptyForm = {
   amount: '',
   date: '',
   stage: '',
-  sales: '',
-  pm: '',
   notes: '',
   ...emptyCaipFields(),
 };
 
+/* ── 編輯模式用完整表單（含全部欄位） ── */
+const emptyForm = {
+  ...emptyCommon,
+  ...emptyItem,
+};
+
 export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editingRecord, customColumns, dictionary, viewMode = 'AIBS', showConfirm }) {
   const [form, setForm] = useState({ ...emptyForm });
-  const [newItems, setNewItems] = useState([{ ...emptyForm }]);
+  const [commonInfo, setCommonInfo] = useState({ ...emptyCommon });
+  const [newItems, setNewItems] = useState([{ ...emptyItem }]);
 
   const dictData = dictionary || {};
   const isCAIP = viewMode === 'CAIP';
   const isEditMode = !!editingRecord;
+
+  const setCommon = (key, value) => setCommonInfo(prev => ({ ...prev, [key]: value }));
 
   // When editingRecord changes, populate form
   useEffect(() => {
@@ -71,7 +86,8 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       setForm(ef);
     } else {
       setForm({ ...emptyForm });
-      setNewItems([{ ...emptyForm }]);
+      setCommonInfo({ ...emptyCommon });
+      setNewItems([{ ...emptyItem }]);
     }
   }, [editingRecord]);
 
@@ -134,7 +150,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
   };
 
   function addNewItem() {
-    setNewItems(prev => [...prev, { ...emptyForm }]);
+    setNewItems(prev => [...prev, { ...emptyItem }]);
   }
   function removeNewItem(idx) {
     setNewItems(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
@@ -189,17 +205,31 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       onSave(record);
       setForm({ ...emptyForm });
     } else {
-      // New mode — batch save
+      // Validate commonInfo fields first
+      const commonMissing = [
+        { key: 'enduser', label: 'EU' },
+        { key: 'si',      label: 'Partner' },
+        { key: 'sales',   label: 'Sales' },
+        { key: 'pm',      label: 'PM' },
+      ].filter(f => !commonInfo[f.key]);
+      if (commonMissing.length > 0) {
+        toast.error('共用資訊缺少必填欄位：' + commonMissing.map(f => f.label).join(', '));
+        return;
+      }
+      // Validate each item
       const items = newItems;
       for (let i = 0; i < items.length; i++) {
-        const missing = validateRecord(items[i]);
+        const merged = { ...commonInfo, ...items[i] };
+        const missing = validateRecord(merged);
         if (missing.length > 0) {
-          toast.error(`第 ${i + 1} 筆缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
+          toast.error(`品項 #${i + 1} 缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
           return;
         }
       }
+      // Merge and send
       const records = items.map(item => {
         const record = {
+          ...commonInfo,
           ...item,
           quantity: item.quantity ? Number(item.quantity) : 0,
           amount: item.amount ? Number(String(item.amount).replace(/,/g, '')) : 0,
@@ -210,13 +240,57 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         return record;
       });
       onSave(records);
-      setNewItems([{ ...emptyForm }]);
+      setCommonInfo({ ...emptyCommon });
+      setNewItems([{ ...emptyItem }]);
     }
+  }
+
+  function handleSaveAndContinue() {
+    if (isEditMode) return; // only for new mode
+    // Validate commonInfo
+    const commonMissing = [
+      { key: 'enduser', label: 'EU' },
+      { key: 'si',      label: 'Partner' },
+      { key: 'sales',   label: 'Sales' },
+      { key: 'pm',      label: 'PM' },
+    ].filter(f => !commonInfo[f.key]);
+    if (commonMissing.length > 0) {
+      toast.error('共用資訊缺少必填欄位：' + commonMissing.map(f => f.label).join(', '));
+      return;
+    }
+    // Validate each item
+    for (let i = 0; i < newItems.length; i++) {
+      const merged = { ...commonInfo, ...newItems[i] };
+      const missing = validateRecord(merged);
+      if (missing.length > 0) {
+        toast.error(`品項 #${i + 1} 缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
+        return;
+      }
+    }
+    // Merge and send
+    const records = newItems.map(item => {
+      const record = {
+        ...commonInfo,
+        ...item,
+        quantity: item.quantity ? Number(item.quantity) : 0,
+        amount: item.amount ? Number(String(item.amount).replace(/,/g, '')) : 0,
+      };
+      for (const k of CAIP_NUM_KEYS) {
+        if (record[k] !== undefined) record[k] = Number(record[k]) || 0;
+      }
+      return record;
+    });
+    onSave(records);
+    // Reset for next entry — don't close drawer
+    setCommonInfo({ ...emptyCommon });
+    setNewItems([{ ...emptyItem }]);
+    toast.success('已儲存！請繼續新增下一筆。');
   }
 
   function handleClose() {
     setForm({ ...emptyForm });
-    setNewItems([{ ...emptyForm }]);
+    setCommonInfo({ ...emptyCommon });
+    setNewItems([{ ...emptyItem }]);
     onClose();
   }
 
@@ -232,11 +306,10 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
   const labelCls =
     'block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1';
 
-  /* ── Shared Form Fields (AIBS core) ── */
-  function renderCoreFields(data, setter) {
+  /* ── 共用資訊欄位 (表頭: EU / Partner / Sales / PM) ── */
+  function renderCommonFields(data, setter) {
     return (
       <>
-        {/* EU / Partner */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>
@@ -261,7 +334,50 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             />
           </div>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>
+              Sales <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.sales}
+              onChange={(e) => setter('sales', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.sales || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>
+              PM <span className="text-red-500">*</span>
+            </label>
+            <select
+              className={inputCls}
+              value={data.pm}
+              onChange={(e) => setter('pm', e.target.value)}
+            >
+              <option value="">請選擇</option>
+              {(dictData.pm || []).map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </>
+    );
+  }
 
+  /* ── 品項明細欄位 (表身: Type / Cat / SKU / QTY / NTM / POD / Stage) ── */
+  function renderItemFields(data, setter) {
+    return (
+      <>
         {/* Type / Cat */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -311,6 +427,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             <input
               type="text"
               className={inputCls}
+              placeholder="請確實輸入SkuTitle"
               value={data.sku}
               onChange={(e) => setter('sku', e.target.value)}
             />
@@ -334,7 +451,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           <div>
             <label className={labelCls}>
               NTM {!isCAIP && <span className="text-red-500">*</span>}
-              {isCAIP && <span className="text-gray-400 text-[10px] ml-1">(auto)</span>}
+              {isCAIP && <span className="text-gray-400 text-[10px] ml-1">（此欄位自動計算）</span>}
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -363,7 +480,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           </div>
         </div>
 
-        {/* Stage / Sales */}
+        {/* Stage */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>
@@ -382,46 +499,18 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               ))}
             </select>
           </div>
-          <div>
-            <label className={labelCls}>
-              Sales <span className="text-red-500">*</span>
-            </label>
-            <select
-              className={inputCls}
-              value={data.sales}
-              onChange={(e) => setter('sales', e.target.value)}
-            >
-              <option value="">請選擇</option>
-              {(dictData.sales || []).map((d) => (
-                <option key={d.code} value={d.code}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* PM */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>
-              PM <span className="text-red-500">*</span>
-            </label>
-            <select
-              className={inputCls}
-              value={data.pm}
-              onChange={(e) => setter('pm', e.target.value)}
-            >
-              <option value="">請選擇</option>
-              {(dictData.pm || []).map((d) => (
-                <option key={d.code} value={d.code}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
           <div />
         </div>
+      </>
+    );
+  }
+
+  /* ── 編輯模式用完整欄位（全部合在一起） ── */
+  function renderCoreFields(data, setter) {
+    return (
+      <>
+        {renderCommonFields(data, setter)}
+        {renderItemFields(data, setter)}
       </>
     );
   }
@@ -468,11 +557,16 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           </div>
           <div>
             <label className={labelCls}>ACR Start Month</label>
-            <input type="text" className={inputCls} value={data.acr_start_month} onChange={(e) => setter('acr_start_month', e.target.value)} />
+            <input type="month" className={inputCls} value={data.acr_start_month} onChange={(e) => setter('acr_start_month', e.target.value)} />
           </div>
           <div>
             <label className={labelCls}>ACR/Month</label>
-            <input type="number" className={inputCls} value={data.acr_mom} onChange={(e) => setter('acr_mom', e.target.value)} />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-500 text-sm font-medium">$</span>
+              </div>
+              <input type="number" className={`${inputCls} pl-7 font-mono`} value={data.acr_mom} onChange={(e) => setter('acr_mom', e.target.value)} />
+            </div>
           </div>
         </div>
 
@@ -482,7 +576,12 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {['jul','aug','sep','oct','nov','dec'].map(m => (
             <div key={m}>
               <label className={labelCls}>{CAIP_LABELS[m]}</label>
-              <input type="number" className={inputCls} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                  <span className="text-gray-400 text-xs font-medium">$</span>
+                </div>
+                <input type="number" className={`${inputCls} pl-6 font-mono`} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+              </div>
             </div>
           ))}
         </div>
@@ -491,18 +590,28 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           {['jan','feb','mar','apr','may','jun'].map(m => (
             <div key={m}>
               <label className={labelCls}>{CAIP_LABELS[m]}</label>
-              <input type="number" className={inputCls} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                  <span className="text-gray-400 text-xs font-medium">$</span>
+                </div>
+                <input type="number" className={`${inputCls} pl-6 font-mono`} value={data[m]} onChange={(e) => setter(m, e.target.value)} />
+              </div>
             </div>
           ))}
         </div>
 
         {/* Quarterly Sums (read-only) */}
-        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Quarterly Totals (auto)</div>
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Quarterly Totals（以下欄位自動計算）</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {['q1','q2','q3','q4'].map(q => (
             <div key={q}>
               <label className={labelCls}>{CAIP_LABELS[q]}</label>
-              <input type="number" className={`${inputCls} bg-gray-50 font-mono`} value={data[q]} readOnly />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                  <span className="text-gray-400 text-xs font-medium">$</span>
+                </div>
+                <input type="number" className={`${inputCls} pl-6 bg-gray-50 font-mono`} value={data[q]} readOnly />
+              </div>
             </div>
           ))}
         </div>
@@ -581,8 +690,18 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               </div>
             </div>
           ) : (
-            /* ── New Mode: multi-item ── */
+            /* ── New Mode: common info + multi-item ── */
             <>
+              {/* Common Info Card (表頭) */}
+              <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-brand-200 flex flex-col gap-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-brand-500" />
+                  <span className="text-xs font-semibold text-brand-700 uppercase tracking-wider">共用資訊（適用於下方所有品項）</span>
+                </div>
+                {renderCommonFields(commonInfo, setCommon)}
+              </div>
+
+              {/* Item Cards (表身) */}
               {newItems.map((item, idx) => (
                 <div key={idx} className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100 flex flex-col gap-4 relative">
                   <div className="flex justify-between items-center mb-1">
@@ -598,7 +717,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                       )}
                     </div>
                   </div>
-                  {renderCoreFields(item, (k, v) => setNewItem(idx, k, v))}
+                  {renderItemFields(item, (k, v) => setNewItem(idx, k, v))}
                   {renderCaipFields(item, (k, v) => setNewItem(idx, k, v))}
 
                   {/* Custom Columns */}
@@ -670,6 +789,15 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             >
               取消
             </button>
+            {!isEditMode && (
+              <button
+                onClick={handleSaveAndContinue}
+                className="px-4 py-2 border border-brand-300 text-brand-600 hover:bg-brand-50 text-sm font-medium rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowClockwise size={16} />
+                儲存並繼續
+              </button>
+            )}
             <button
               onClick={handleSave}
               className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded transition-colors flex items-center gap-1.5 cursor-pointer"

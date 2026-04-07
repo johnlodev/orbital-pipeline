@@ -2,11 +2,12 @@ import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'rea
 import { motion } from 'framer-motion';
 import {
   Trash, MagnifyingGlass, Funnel, Columns, CaretUp, CaretDown, CaretRight,
-  Plus, MicrosoftExcelLogo, PencilSimple, X, Lock, ArrowsOutCardinal,
+  Plus, MicrosoftExcelLogo, PencilSimple, X, Lock, ArrowsOutCardinal, DownloadSimple,
 } from '@phosphor-icons/react';
 import { dictData as defaultDictData } from '../utils/mockData';
 import { ProductBadge, StageBadge } from './Badges';
 import { USD_EXCHANGE_RATE } from '../utils/constants';
+import * as XLSX from 'xlsx';
 
 // ── ShimmerButton (CTA with sweep light + spring press) ──
 function ShimmerButton({ children, onClick, className = '' }) {
@@ -498,6 +499,76 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     setFilterAcrPositive([]); setFilterSegments([]);
   }
 
+  // ── WYSIWYG Excel Export ──
+  function handleExportExcel() {
+    // 1. Determine visible export columns (exclude action/selection columns)
+    const SKIP_IDS = new Set(['selection', 'expander', 'actions']);
+    const exportCols = columns.filter(c => visibleCols[c.id] !== false && !SKIP_IDS.has(c.id));
+
+    if (exportCols.length === 0) {
+      toast.error('沒有可匯出的欄位，請至少顯示一個欄位。');
+      return;
+    }
+
+    // 2. Flatten all filtered data (across all pages, expand groups)
+    const rows = filteredData;
+
+    if (rows.length === 0) {
+      toast.error('目前篩選結果為 0 筆，無法匯出。');
+      return;
+    }
+
+    // 3. Build export data
+    const exportData = rows.map(row => {
+      const obj = {};
+      for (const col of exportCols) {
+        const key = col.id;
+        const header = col.label;
+        let val = row[key];
+
+        // Format specific fields
+        if (key === 'amount') {
+          val = val != null ? Number(val) : 0;
+        } else if (CAIP_NUM_IDS.has(key)) {
+          val = val != null ? Number(val) : 0;
+        } else if (key === 'date') {
+          val = val || '';
+        } else {
+          val = val ?? '';
+        }
+
+        obj[header] = val;
+      }
+      return obj;
+    });
+
+    // 4. Create workbook and download
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // Auto-fit column widths
+    const colWidths = exportCols.map(col => {
+      const header = col.label;
+      let maxLen = header.length;
+      for (const row of exportData) {
+        const cellVal = String(row[header] ?? '');
+        maxLen = Math.max(maxLen, cellVal.length);
+      }
+      return { wch: Math.min(maxLen + 2, 40) };
+    });
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    const sheetName = isCAIP ? 'CAIP' : 'AIBS';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const fileName = `${sheetName}商機總表_${dateStr}.xlsx`;
+
+    XLSX.writeFile(wb, fileName);
+    toast.success(`已匯出 ${rows.length} 筆資料至 ${fileName}`);
+  }
+
   function toggleColVisibility(key) {
     setVisibleCols(prev => {
       const isCurrentlyVisible = prev[key] !== false;
@@ -688,6 +759,9 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
               <MicrosoftExcelLogo size={16} /> EXCEL 匯入
             </button>
             )}
+            <button onClick={handleExportExcel} className="w-full sm:w-auto bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
+              <DownloadSimple size={16} /> EXCEL 匯出
+            </button>
             <div className="h-8 w-px bg-gray-200 mx-2 hidden lg:block" />
             <div className="text-right hidden lg:block">
               <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">預估商機總額</p>
