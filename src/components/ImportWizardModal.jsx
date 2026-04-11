@@ -3,8 +3,8 @@ import {
   X, MicrosoftExcelLogo, DownloadSimple, CheckCircle, Table as TableIcon,
 } from '@phosphor-icons/react';
 
-// System fields for column mapping
-const SHARED_FIELDS = [
+// ── Field definitions split into composable segments ──
+const CORE_FIELDS = [
   { id: 'skip', label: '忽略此欄 (Skip)' },
   { id: 'enduser', label: 'EU' },
   { id: 'si', label: 'Partner' },
@@ -12,12 +12,25 @@ const SHARED_FIELDS = [
   { id: 'product', label: 'Cat.' },
   { id: 'sku', label: 'SKU' },
   { id: 'quantity', label: 'QTY' },
+  { id: 'unitPrice', label: 'U/P' },
   { id: 'amount', label: 'NTM' },
   { id: 'date', label: 'POD' },
   { id: 'stage', label: 'Stage' },
+];
+
+const RENEWAL_FIELDS = [
+  { id: 'expDate', label: 'EXP (原到期日)' },
+  { id: 'originalSku', label: '原 SKU' },
+  { id: 'originalQty', label: '原 QTY' },
+  { id: 'originalUnitPrice', label: '原 U/P' },
+  { id: 'originalNtm', label: '原 NTM' },
+];
+
+const TAIL_FIELDS = [
   { id: 'notes', label: 'Notes' },
   { id: 'sales', label: 'Sales' },
   { id: 'pm', label: 'PM' },
+  { id: 'lud', label: 'LUD' },
 ];
 
 // CAIP-only extra fields
@@ -35,41 +48,97 @@ const CAIP_EXTRA_FIELDS = [
   { id: 'q1', label: 'Q1' }, { id: 'q2', label: 'Q2' }, { id: 'q3', label: 'Q3' }, { id: 'q4', label: 'Q4' },
 ];
 
+// Renew-only extra fields
+const RENEW_EXTRA_FIELDS = [
+  { id: 'segment', label: 'Segment' },
+  { id: 'sales_stage', label: 'Sales Stage' },
+  { id: 'referral_id', label: 'Referral ID' },
+];
+
 const CAIP_NUM_IDS = new Set(['acr_mom','jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','q1','q2','q3','q4']);
 
-// Auto-match header text to field id
-function autoMatchField(headerText, isCAIP) {
-  const h = headerText.trim();
-  if (h.includes('EU') || h.includes('客戶')) return 'enduser';
-  if (h.includes('Partner') || h.includes('代理')) return 'si';
-  if (h.includes('Category') || h.includes('產品') || h.includes('Cat.')) return 'product';
-  if (h.includes('Type') || h.includes('類型')) return 'reqType';
-  if (h.includes('Sales') && !h.includes('Stage') || h.includes('業務')) return 'sales';
-  if (h.includes('PM')) return 'pm';
-  if (h.includes('SKU') || h.includes('明細')) return 'sku';
-  if (h.includes('Quantity') || h.includes('數量') || h.includes('套數') || h.includes('QTY')) return 'quantity';
-  if (h.includes('NTM') || h.includes('金額')) return 'amount';
-  if (/\b日|\b時間|\bPOD/i.test(h)) return 'date';
-  if (h === 'Stage' || h.includes('階段')) return 'stage';
-  if (h.includes('Note') || h.includes('案況')) return 'notes';
-  // CAIP auto-match
-  if (isCAIP) {
-    const lower = h.toLowerCase();
-    if (lower === 'segment') return 'segment';
-    if (lower.includes('disti')) return 'disti_name';
-    if (lower.includes('sales stage') || lower === 'sales_stage') return 'sales_stage';
-    if (lower.includes('referral')) return 'referral_id';
-    if (lower.includes('acr start') || lower === 'acr_start_month') return 'acr_start_month';
-    if (lower.includes('acr mom') || lower === 'acr_mom') return 'acr_mom';
-    const monthMatch = CAIP_EXTRA_FIELDS.find(f => f.label.toLowerCase() === lower && CAIP_NUM_IDS.has(f.id));
-    if (monthMatch) return monthMatch.id;
+// Robust CSV row parser: handles quoted fields containing commas
+function parseCSVRow(text) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
   }
+  result.push(cur.trim());
+  return result;
+}
+
+// Auto-match header text to field id (bulletproof: sanitize invisible chars first)
+function autoMatchField(headerText, isCAIP, isRenew) {
+  // Sanitize: strip BOM, zero-width chars, NBSP, full-width parens; collapse whitespace
+  const h = headerText
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\u00A0\u3000]/g, ' ')
+    .replace(/\uFF08/g, '(').replace(/\uFF09/g, ')')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const lower = h.toLowerCase();
+  const noOrig = !/原|Original/i.test(h);
+
+  // ── Core fields ──
+  if (/\bEU\b|End\s*User|客戶/i.test(h)) return 'enduser';
+  if (/Partner|代理|經銷/i.test(h)) return 'si';
+  if (/\bCat\.?|Category|產品/i.test(h)) return 'product';
+  if (/\bType\b|類型/i.test(h)) return 'reqType';
+  if ((/\bSKU\b|明細/i.test(h)) && noOrig) return 'sku';
+  if ((/\bQTY\b|Quantity|數量|套數/i.test(h)) && noOrig) return 'quantity';
+  if ((/U\/?P|Unit\s*Price|單價/i.test(h)) && noOrig) return 'unitPrice';
+  if ((/\bNTM\b|金額/i.test(h)) && noOrig) return 'amount';
+  if (/\bPOD\b|日期|Date/i.test(h) && !/到期|EXP|Start/i.test(h)) return 'date';
+  if (/^Stage$|階段/i.test(h) && !/Sales/i.test(h)) return 'stage';
+  if (/Note|案況|備註/i.test(h)) return 'notes';
+  if (/^Sales$|業務/i.test(h)) return 'sales';
+  if (/^PM$/i.test(h)) return 'pm';
+  if (/^LUD$|上次更新|最後更新|Last\s*Update/i.test(h)) return 'lud';
+
+  // ── Renewal fields ──
+  if (/到期日?|EXP/i.test(h)) return 'expDate';
+  if (/原\s*SKU|Original\s*SKU|SKU\s*\(Original/i.test(h)) return 'originalSku';
+  if (/原\s*QTY|原\s*數量|Original\s*QTY|QTY\s*\(Original/i.test(h)) return 'originalQty';
+  if (/原\s*U\/?P|原\s*單價|Original\s*U\/?P|Original\s*Unit\s*Price/i.test(h)) return 'originalUnitPrice';
+  if (/原\s*NTM|Original\s*NTM|NTM\s*\(Original/i.test(h)) return 'originalNtm';
+
+  // ── Shared extended (CAIP & Renew) ──
+  if (isCAIP || isRenew) {
+    if (/Segment/i.test(h)) return 'segment';
+    if (/Sales\s*Stage/i.test(h)) return 'sales_stage';
+    if (/Referral\s*I\.?D\.?|referral/i.test(h)) return 'referral_id';
+  }
+
+  // ── CAIP-only ──
+  if (isCAIP) {
+    if (/Disti/i.test(h)) return 'disti_name';
+    if (/ACR\s*Start/i.test(h)) return 'acr_start_month';
+    if (/ACR\s*MoM|ACR\s*\/?\s*Month/i.test(h)) return 'acr_mom';
+    const monthQtrMap = { jul:'jul', aug:'aug', sep:'sep', oct:'oct', nov:'nov', dec:'dec', jan:'jan', feb:'feb', mar:'mar', apr:'apr', may:'may', jun:'jun', q1:'q1', q2:'q2', q3:'q3', q4:'q4' };
+    if (monthQtrMap[lower]) return monthQtrMap[lower];
+  }
+
   return 'skip';
 }
 
 export default function ImportWizardModal({ isOpen, onClose, dictionary, onImport, viewMode = 'AIBS' }) {
   const isCAIP = viewMode === 'CAIP';
-  const SYSTEM_FIELDS = useMemo(() => isCAIP ? [...SHARED_FIELDS, ...CAIP_EXTRA_FIELDS] : SHARED_FIELDS, [isCAIP]);
+  const isRenew = viewMode === 'AIBS_RENEW';
+  const SYSTEM_FIELDS = useMemo(() => {
+    if (isCAIP) return [...CORE_FIELDS, ...CAIP_EXTRA_FIELDS, ...TAIL_FIELDS];
+    if (isRenew) return [...CORE_FIELDS, ...RENEWAL_FIELDS, ...RENEW_EXTRA_FIELDS, ...TAIL_FIELDS];
+    return [...CORE_FIELDS, ...TAIL_FIELDS];
+  }, [isCAIP, isRenew]);
   const [parsedHeaders, setParsedHeaders] = useState([]);
   const [parsedData, setParsedData] = useState([]);
   const [colMapping, setColMapping] = useState([]);
@@ -100,7 +169,8 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = isCAIP ? 'CAIP_Pipeline_Import_Template.csv' : 'AIBS_Pipeline_Import_Template.csv';
+    const prefix = isCAIP ? 'CAIP' : isRenew ? 'AIBS_Renew' : 'AIBS';
+    link.download = `${prefix}_Pipeline_Import_Template.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -122,18 +192,19 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
       }
 
       const separator = lines[0].includes('\t') ? '\t' : (lines[0].includes(',') ? ',' : '\t');
-      const headers = lines[0].split(separator).map(h => h.trim());
-      const data = lines.slice(1).map(l => l.split(separator).map(c => c.trim()));
+      const splitRow = separator === ',' ? parseCSVRow : (line => line.split(separator).map(c => c.trim()));
+      const headers = splitRow(lines[0]).map(h => h.trim());
+      const data = lines.slice(1).map(l => splitRow(l));
 
       // Auto-match columns
-      const mapping = headers.map(h => autoMatchField(h, isCAIP));
+      const mapping = headers.map(h => autoMatchField(h, isCAIP, isRenew));
 
       setParsedHeaders(headers);
       setParsedData(data);
       setColMapping(mapping);
       setErrorMsg('');
     }, 100);
-  }, []);
+  }, [isCAIP, isRenew]);
 
   // --- Update column mapping ---
   function updateMapping(colIndex, fieldId) {
@@ -193,6 +264,13 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
       if (isNaN(amount)) amount = 0;
       let quantity = mapped.quantity ? Number(mapped.quantity.replace(/[^0-9.-]/g, '')) : 0;
       if (isNaN(quantity)) quantity = 0;
+      let unitPrice = mapped.unitPrice ? Number(String(mapped.unitPrice).replace(/[^0-9.-]/g, '')) : 0;
+      if (isNaN(unitPrice)) unitPrice = 0;
+
+      // Smart fallback: auto-calculate NTM if empty
+      if (!amount && quantity && unitPrice) {
+        amount = quantity * unitPrice;
+      }
 
       // Resolve dict codes for sales/pm/stage
       const resolveDictCode = (dictKey, rawVal) => {
@@ -209,24 +287,61 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
         product: isCAIP ? 'Azure' : (mapped.product || '-'),
         sku: mapped.sku || '-',
         quantity,
+        unitPrice,
         amount,
         date: mapped.date || '-',
         stage: resolveDictCode('stage', mapped.stage),
         sales: resolveDictCode('sales', mapped.sales),
         pm: resolveDictCode('pm', mapped.pm),
         notes: mapped.notes || '',
-        // CAIP extended fields
-        ...(isCAIP ? {
+        lud: mapped.lud || '',
+        // Renewal fields (guarded: only keep if reqType includes 續約)
+        ...(() => {
+          const RENEW_KW = ['續約', '降級購買', '未續約'];
+          const isRenewRow = RENEW_KW.some(kw => mapped.reqType?.includes(kw));
+          if (!isRenewRow) return { expDate: '', originalSku: '', originalQty: 0, originalUnitPrice: 0, originalNtm: 0 };
+          let origQty = mapped.originalQty ? Number(String(mapped.originalQty).replace(/[^0-9.-]/g, '')) : 0;
+          if (isNaN(origQty)) origQty = 0;
+          let origUP = mapped.originalUnitPrice ? Number(String(mapped.originalUnitPrice).replace(/[^0-9.-]/g, '')) : 0;
+          if (isNaN(origUP)) origUP = 0;
+          let origNtm = mapped.originalNtm ? Number(String(mapped.originalNtm).replace(/[^0-9.-]/g, '')) : 0;
+          if (isNaN(origNtm)) origNtm = 0;
+          // Smart fallback: auto-calculate 原NTM if empty
+          if (!origNtm && origQty && origUP) {
+            origNtm = origQty * origUP;
+          }
+          return {
+            expDate: mapped.expDate || '',
+            originalSku: mapped.originalSku || '',
+            originalQty: origQty,
+            originalUnitPrice: origUP,
+            originalNtm: origNtm,
+          };
+        })(),
+        // CAIP / Renew extended fields
+        ...((isCAIP || isRenew) ? {
           segment: mapped.segment || '',
-          disti_name: mapped.disti_name || '',
           sales_stage: mapped.sales_stage || '',
           referral_id: mapped.referral_id || '',
+        } : {}),
+        ...(isCAIP ? {
+          disti_name: mapped.disti_name || '',
           acr_start_month: mapped.acr_start_month || '',
           ...Object.fromEntries([...CAIP_NUM_IDS].map(k => {
             let v = mapped[k] ? Number(String(mapped[k]).replace(/[^0-9.-]/g, '')) : 0;
             if (isNaN(v)) v = 0;
             return [k, v];
           })),
+          // Smart fallback: auto-sum Q1~Q4 from months (MS fiscal year)
+          ...(() => {
+            const g = id => Number(String(mapped[id] || '').replace(/[^0-9.-]/g, '')) || 0;
+            const out = {};
+            if (!g('q1') && (g('jul') || g('aug') || g('sep'))) out.q1 = g('jul') + g('aug') + g('sep');
+            if (!g('q2') && (g('oct') || g('nov') || g('dec'))) out.q2 = g('oct') + g('nov') + g('dec');
+            if (!g('q3') && (g('jan') || g('feb') || g('mar'))) out.q3 = g('jan') + g('feb') + g('mar');
+            if (!g('q4') && (g('apr') || g('may') || g('jun'))) out.q4 = g('apr') + g('may') + g('jun');
+            return out;
+          })(),
         } : {}),
       };
     });
@@ -351,7 +466,7 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
 
                     {/* Table with mapping selects */}
                     <div className="overflow-x-auto grid-scroll flex-1 bg-white">
-                      <table className="w-full text-left whitespace-nowrap">
+                      <table className="min-w-max w-full text-left">
                         <thead className="bg-[#faf9f8] border-b border-gray-200 text-xs">
                           {/* Row 1: Column mapping selects */}
                           <tr>
@@ -394,11 +509,13 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
                           {parsedData.slice(0, 3).map((row, rIdx) => (
                             <tr key={rIdx}>
                               {parsedHeaders.map((_, cIdx) => (
-                                <td key={cIdx} className="px-2 py-2 border-r border-gray-200 truncate max-w-[120px]">
-                                  {row[cIdx] != null && row[cIdx] !== ''
-                                    ? row[cIdx]
-                                    : <span className="italic text-gray-400">空白</span>
-                                  }
+                                <td key={cIdx} className="px-4 py-2 border-b text-sm">
+                                  <div className="max-w-[150px] truncate" title={String(row[cIdx] ?? '')}>
+                                    {row[cIdx] != null && row[cIdx] !== ''
+                                      ? row[cIdx]
+                                      : <span className="italic text-gray-400">空白</span>
+                                    }
+                                  </div>
                                 </td>
                               ))}
                             </tr>

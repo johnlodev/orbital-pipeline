@@ -37,6 +37,8 @@
 | **react-chartjs-2** | 5.3.1 | Chart.js React 包裝器 |
 | **chartjs-plugin-datalabels** | 2.2.0 | 圖表數據標籤 |
 | **@phosphor-icons/react** | 2.1.10 | Icon 圖示庫 |
+| **sonner** | — | Toast 通知系統 |
+| **xlsx** | 0.18.5 | Excel 匯出引擎 |
 | **clsx + tailwind-merge** | — | `cn()` 工具函式（`src/utils/cn.js`） |
 
 ### 後端 / BaaS
@@ -81,7 +83,7 @@ orbital-pipeline/
 │
 └── src/
     ├── main.jsx                # React 19 掛載點（StrictMode）
-    ├── App.jsx                 # 根元件：Auth Gate + 資料層 + 路由 (388 行)
+    ├── App.jsx                 # 根元件：Auth Gate + 資料層 + 路由 (431 行)
     ├── index.css               # Tailwind @theme 主題定義 + 全域樣式 (.glass/.dot-pattern/.shimmer)
     ├── App.css                 # （目前未使用）
     │
@@ -91,15 +93,16 @@ orbital-pipeline/
     │   └── vite.svg            # Vite logo
     │
     ├── components/
-    │   ├── AuthScreen.jsx      # 登入 / 註冊 / 忘記密碼 (247 行)
-    │   ├── Sidebar.jsx         # 側邊欄導航 — AIBS/CAIP/Dashboard (215 行)
+    │   ├── AuthScreen.jsx      # 登入 / 註冊 / 忘記密碼 (248 行)
+    │   ├── Sidebar.jsx         # 側邊欄導航 — AIBS/CAIP/Dashboard + 行動版 (227 行)
     │   ├── Header.jsx          # 頁首元件（目前由 PipelineTable 自含 header）(84 行)
-    │   ├── PipelineTable.jsx   # 主資料表格（核心元件）(1147 行)
-    │   ├── RecordDrawer.jsx    # 右側抽屜表單（新增/編輯，CAIP Q1-Q4 auto-sum）(628 行)
+    │   ├── PipelineTable.jsx   # 主資料表格（核心元件）+ WYSIWYG Excel 匯出 (1252 行)
+    │   ├── RecordDrawer.jsx    # 右側抽屜表單（表頭/表身分離 + 極速新增）(772 行)
     │   ├── Dashboard.jsx       # 儀表板 9 圖表 + Azure 情境篩選 (653 行)
-    │   ├── SettingsModal.jsx   # 字典管理 Modal (402 行)
+    │   ├── SettingsModal.jsx   # 字典管理 Modal + 自訂 Prompt + RWD (494 行)
     │   ├── ImportWizardModal.jsx  # 資料匯入精靈 (407 行)
-    │   ├── AdminPanel.jsx      # 權限管理面板 (245 行)
+    │   ├── AdminPanel.jsx      # 權限管理面板 (247 行)
+    │   ├── ConfirmModal.jsx    # 確認彈窗元件 (51 行)
     │   └── Badges.jsx          # Badge 元件系統 (101 行)
     │
     └── utils/
@@ -113,7 +116,7 @@ orbital-pipeline/
 
 ## 4. 核心元件詳細說明
 
-### 4.1 `App.jsx` — 應用根元件 (388 行)
+### 4.1 `App.jsx` — 應用根元件 (431 行)
 
 **職責**：Auth Gate、全域狀態管理、資料 CRUD、Supabase 互動中樞、AIBS/CAIP 雙軌路由。
 
@@ -136,9 +139,9 @@ App (Auth Gate)
 - **字典自動 Seed**：首次啟動若 `dictionaries` 表為空，自動寫入 `mockData.js` 的預設值
 - **viewMode 導向**：CAIP 模式下 product 欄位強制為 `'Azure'`，RecordDrawer 顯示 CAIP 專屬欄位
 
-### 4.2 `PipelineTable.jsx` — 主資料表格 (1147 行)
+### 4.2 `PipelineTable.jsx` — 主資料表格 (1252 行)
 
-**職責**：商機資料的完整表格檢視、操作介面。AIBS / CAIP 雙軌動態欄位。
+**職責**：商機資料的完整表格檢視、操作介面、WYSIWYG Excel 匯出。AIBS / CAIP 雙軌動態欄位。
 
 | 功能 | 說明 |
 |------|------|
@@ -152,7 +155,7 @@ App (Auth Gate)
 | Smart Expand/Collapse | 有勾選時僅展開/收合選取群組，否則全部 |
 | Inline 編輯 | reqType 欄位直接用 `<select>` 切換 |
 | 批次操作 | 全選 / 批次刪除 |
-| 匯出 | CSV / 剪貼簿匯出 |
+| 匯出 | CSV / 剪貼簿匯出 + **WYSIWYG Excel 匯出** (xlsx) |
 | 自訂欄位 | 動態新增自訂 column |
 | RBAC | Sales 僅看自己的資料、Guest 唯讀 |
 | Sticky Columns | EU / Partner 欄位固定不捲動（opaque 背景防鬼影） |
@@ -166,6 +169,7 @@ App (Auth Gate)
 **關鍵函式**：
 - `getNameFromDict(dictKey, code)` — 字典 code → label 查詢
 - `renderCell(row, colKey)` — 各欄位的渲染策略（包含 Badge 元件呼叫）
+- `handleExportExcel()` — WYSIWYG Excel 匯出（尊重篩選、欄位可見性、自動欄寬、忽略分頁）
 - Cat. filter 動態依 viewMode 過濾：AIBS 排除 Azure，CAIP 僅 Azure
 
 ### 4.3 `Badges.jsx` — Badge 元件系統 (101 行)
@@ -256,22 +260,35 @@ App (Auth Gate)
 - 使用字典 label 作為圖表標籤
 - `DashFilterGroup` 可複用篩選元件（label + items + checkbox）
 
-### 4.5 `RecordDrawer.jsx` — 右側抽屜表單 (628 行)
+### 4.5 `RecordDrawer.jsx` — 右側抽屜表單 (772 行)
 
-**職責**：新增與編輯商機紀錄的滑出面板，支援 AIBS / CAIP 雙軌模式。
+**職責**：新增與編輯商機紀錄的滑出面板，支援 AIBS / CAIP 雙軌模式。採用表頭/表身分離架構，支援極速新增流程。
 
 | 功能 | 說明 |
 |------|------|
-| 新增模式 | 空白表單，必填欄位驗證 |
+| 新增模式 | 表頭（EU/Partner/Sales/PM）+ 多筆表身品項，必填欄位驗證 |
 | 編輯模式 | 預填現有資料，白色卡片包裹 |
+| 表頭/表身分離 | `commonInfo`（EU/Partner/Sales/PM）+ `newItems[]`（Type/Cat/SKU/QTY/NTM/POD/Stage/Notes + CAIP） |
+| 儲存並繼續 | `handleSaveAndContinue()` — 儲存後重置品項保留表頭，極速連續新增 |
+| 品項複製 | `handleDuplicate(idx)` — 複製指定品項欄位 |
 | 字典下拉 | 所有 select 使用 `dictionary` prop |
 | 自訂欄位 | 動態載入 `customColumns` |
-| 刪除 | 編輯模式下可刪除此筆 |
+| 刪除 | 編輯模式下可刪除此筆（skipConfirm） |
 | CAIP 專屬區塊 | Text Keys + Num Keys 獨立區段 |
 | Q1-Q4 自動加總 | 月度數值 → 季度自動累計 |
-| NTM 自動計算 | Q1+Q2+Q3+Q4 → NTM |
+| NTM 自動計算 | Q1+Q2+Q3+Q4 → NTM（欄位標註「此欄位自動計算」） |
+| Cat. 視圖篩選 | CAIP 僅顯示 Azure，AIBS 排除 Azure |
+| 貨幣前綴 | ACR/Month + 12 個月 + Q1-Q4 欄位顯示 `$` 前綴 |
+| Toast 通知 | 儲存成功 / 複製 / 錯誤皆用 sonner Toast |
 
-**CAIP 欄位定義**：
+**表頭/表身欄位定義**：
+
+| 常數 | 包含欄位 |
+|------|--------|
+| `emptyCommon`（表頭） | enduser, si (Partner), sales, pm |
+| `emptyItem`（表身） | reqType, product, sku, quantity, amount, date, stage, notes + CAIP 欄位 |
+
+**CAIP 專屬欄位**：
 
 | 常數 | 包含欄位 |
 |------|---------|
@@ -282,9 +299,9 @@ App (Auth Gate)
 
 **視覺風格**：面板 `bg-slate-50`，表單 `bg-slate-50`，編輯模式欄位以白色卡片包裹。輸入框 `text-[15px] py-2.5`。Section titles `text-sm font-semibold`。
 
-### 4.6 `SettingsModal.jsx` — 字典管理 (402 行)
+### 4.6 `SettingsModal.jsx` — 字典管理 (494 行)
 
-**職責**：管理系統字典的 CRUD 介面，所有操作同步至 Supabase。
+**職責**：管理系統字典的 CRUD 介面，所有操作同步至 Supabase。支援自訂 Prompt 及行動版 RWD 佈局。
 
 | 功能 | 說明 |
 |------|------|
@@ -302,7 +319,7 @@ App (Auth Gate)
 
 **`__meta__` 機制**：自訂類別的顯示名稱存放在 `dictionaries` 表中 `code = '__meta__'` 的特殊行，`label` 存放中文標題。
 
-### 4.7 `AuthScreen.jsx` — 認證畫面 (247 行)
+### 4.7 `AuthScreen.jsx` — 認證畫面 (248 行)
 
 | 功能 | 說明 |
 |------|------|
@@ -313,7 +330,7 @@ App (Auth Gate)
 
 **視覺風格**：dot-pattern 背景 + 玻璃態 (glassmorphism) 卡片 + Framer Motion AnimatePresence 動畫。
 
-### 4.8 `Sidebar.jsx` — 側邊欄 (215 行)
+### 4.8 `Sidebar.jsx` — 側邊欄 (227 行)
 
 | 功能 | 說明 |
 |------|------|
@@ -321,10 +338,12 @@ App (Auth Gate)
 | 權限管理 | SuperAdmin 限定的入口 |
 | 密碼變更 | 3 步驟 Modal（原密碼驗證 → 新密碼輸入 → Supabase 更新）|
 | 登出 | Supabase `signOut` |
+| 行動版 | Off-canvas 滑出 + X 關閉按鈕（flex md:hidden）|
+| 收合 | 桌面版可收合側邊欄（hidden md:flex）|
 
-**視覺風格**：Fluent Design 淺色主題 — `bg-white border-r border-slate-200`，Active 狀態 `bg-blue-50`。字重 `font-medium` 鎖定。所有狀態過渡使用 `transition-colors`（非 `transition-all`，防抖動）。
+**視覺風格**：Fluent Design 淺色主題 — `bg-white border-r border-slate-200`，Active 狀態 `bg-blue-50`。字重 `font-medium` 鎖定。所有狀態過渡使用 `transition-colors`（非 `transition-all`，防抖動）。行動版使用 translate-x 滑出轉場，支援觸控 off-canvas 導航。
 
-### 4.9 `AdminPanel.jsx` — 權限管理 (245 行)
+### 4.9 `AdminPanel.jsx` — 權限管理 (247 行)
 
 **職責**：SuperAdmin 專屬的使用者權限管理面板。
 
@@ -334,7 +353,7 @@ App (Auth Gate)
 | 權限修改 | 角色指派與權限切換 |
 | 新增/刪除使用者 | 寫入 `user_permissions` 表 |
 
-### 4.10 `ImportWizardModal.jsx` — 匯入精靈 (360 行)
+### 4.10 `ImportWizardModal.jsx` — 匯入精靈 (407 行)
 
 | 功能 | 說明 |
 |------|------|
@@ -389,7 +408,7 @@ App (Auth Gate)
 
 ```
 [新增商機]
-  RecordDrawer → onSave(record)
+  RecordDrawer → onSave(records[])  ← 陣列形式（支援多筆同時新增）
     → App.handleSaveRecord()
     → toDbRecord()    (reqType → reqtype)
     → supabase.insert()
@@ -610,7 +629,7 @@ PipelineTable 中:
 
 - 所有 DB 操作集中在 `App.jsx`
 - 寫入後一律 `await fetchData()` 重新拉取（非 optimistic-only）
-- 錯誤處理：`try/catch` + `alert()` 通知使用者 + `console.error`
+- 錯誤處理：`try/catch` + `toast.error()` Toast 通知 + `console.error`
 - Optimistic UI：`handleUpdateRecord` 先更新本地，失敗時 rollback
 
 ### 8.4 字典 Prop 傳遞模式
@@ -693,6 +712,18 @@ npm run lint         # ESLint 檢查
 | 36 | Dashboard Azure 進階篩選（Segment/Quarters/Months） | ✅ 完成 |
 | 37 | Dashboard 情境動態圖表切換（Cat. ↔ Segment Doughnut） | ✅ 完成 |
 | 38 | Dashboard 全域文案精煉 | ✅ 完成 |
+| 39 | Toast 通知系統 (sonner) | ✅ 完成 |
+| 40 | Custom Prompt Modals | ✅ 完成 |
+| 41 | Mobile RWD（App 行動版 header + Sidebar off-canvas + SettingsModal 響應式） | ✅ 完成 |
+| 42 | RecordDrawer 表頭/表身分離（commonInfo + newItems） | ✅ 完成 |
+| 43 | 極速新增流程（儲存並繼續 handleSaveAndContinue） | ✅ 完成 |
+| 44 | 品項複製功能（handleDuplicate） | ✅ 完成 |
+| 45 | Cat. 視圖篩選（CAIP=Azure only, AIBS=非 Azure） | ✅ 完成 |
+| 46 | 貨幣 `$` 前綴顯示（ACR/Month + 12 個月 + Q1-Q4） | ✅ 完成 |
+| 47 | WYSIWYG Excel 匯出 (xlsx)（尊重篩選/欄位可見性/自動欄寬/忽略分頁） | ✅ 完成 |
+| 48 | ConfirmModal 元件（自訂訊息 + onConfirm/onCancel） | ✅ 完成 |
+| 49 | RecordDrawer 刪除 skipConfirm 優化 | ✅ 完成 |
+| 50 | 自訂欄位編輯模式載入修復 | ✅ 完成 |
 
 ---
 
@@ -705,7 +736,7 @@ npm run lint         # ESLint 檢查
 | 3 | Chunk size 警告 | 低 | Build 後 JS bundle ~969KB，超過 500KB 建議值；可考慮 dynamic import 拆分 |
 | 4 | Header.jsx 冗餘 | 低 | 目前 Header 功能內嵌在 PipelineTable 中，`Header.jsx` 元件幾乎未被實際使用 |
 | 5 | App.css 清理 | 低 | 檔案存在但未被使用 |
-| 6 | 錯誤處理強化 | 中 | 目前使用 `alert()` 通知錯誤，可改為 Toast/Snackbar |
+| 6 | 錯誤處理強化 | ✅ 已完成 | 已引入 sonner Toast 替換原有 `alert()` |
 | 7 | RLS (Row Level Security) | 高 | 需在 Supabase 設定 RLS 政策，確保資料安全 |
 
 ---
@@ -732,6 +763,16 @@ npm run lint         # ESLint 檢查
 | 2026-04 | **Segment 字典整合** — SettingsModal 內建分頁 + RecordDrawer `<select required>` + PipelineTable/Dashboard 篩選 |
 | 2026-04 | **Dashboard Azure 智慧分析** — 進階篩選條件面板（Segment/Quarters/Months）+ 情境動態圖表切換（Cat. ↔ Segment Doughnut） |
 | 2026-04-07 | **Dashboard 全域文案精煉** — 12 處標題字串精簡（移除冗餘中文前綴，統一格式） |
+| 2026-04-07 | **Toast 通知系統** — 引入 sonner，替換所有 alert 為 Toast（success/error） |
+| 2026-04-07 | **Custom Prompt Modals** — SettingsModal 支援自訂 prompt 彈窗 |
+| 2026-04-07 | **Mobile RWD** — App.jsx 行動版 header + Sidebar off-canvas + SettingsModal 響應式佈局 |
+| 2026-04-07 | **RecordDrawer 重建** — 從損壞狀態完整重建（345→772 行），恢復所有功能 |
+| 2026-04-07 | **表頭/表身分離** — RecordDrawer 拆分 commonInfo + newItems[]  架構 |
+| 2026-04-07 | **極速新增流程** — handleSaveAndContinue 儲存後重置品項保留表頭 |
+| 2026-04-07 | **品項複製** — handleDuplicate 複製指定品項欄位 |
+| 2026-04-07 | **UI 精緻** — 貨幣 $ 前綴、Disti 預設 MetaAge、SKU placeholder、NTM/Quarterly 標註 |
+| 2026-04-07 | **WYSIWYG Excel 匯出** — PipelineTable 新增 handleExportExcel（xlsx），尊重篩選/欄位可見性/自動欄寬/忽略分頁 |
+| 2026-04-07 | **Bug Fixes** — 批次儲存改為單次陣列呼叫、雙重確認刪除修復、Sidebar 行動版收合按鈕隱藏、自訂欄位編輯載入修復 |
 
 ---
 
@@ -740,7 +781,7 @@ npm run lint         # ESLint 檢查
 ### 對新開發者 / AI 助手
 
 1. **先讀 `App.jsx`** — 理解全域狀態、資料流和 AIBS/CAIP 雙軌路由
-2. **再讀 `PipelineTable.jsx`** — 最大最複雜的元件（1147 行）
+2. **再讀 `PipelineTable.jsx`** — 最大最複雜的元件（1252 行）
 3. **查看 `mockData.js`** — 理解字典和資料結構（含 segment 預設）
 4. **注意 `reqType` ↔ `reqtype` 映射** — 前端 camelCase、DB 全小寫
 5. **字典 fallback 模式** — 所有元件都有 `dictionary || defaultDictData` 的 fallback
@@ -748,6 +789,8 @@ npm run lint         # ESLint 檢查
 7. **CAIP 欄位** — RecordDrawer 的 `CAIP_TEXT_KEYS` / `CAIP_NUM_KEYS` 常數定義 CAIP 專屬欄位
 8. **Segment** — 字典驅動的 `<select required>`，非自由文字輸入
 9. **transition 規範** — 全域禁止 `transition-all`，只用 `transition-colors` / `transition-shadow` / `transition-[specific-props]`
+10. **Excel 匯出** — `handleExportExcel()` 使用 xlsx 庫，尊重篩選結果和欄位可見性，檔名格式 `[AIBS/CAIP]商機總表_YYYYMMDD.xlsx`
+11. **RecordDrawer 架構** — 表頭/表身分離（`commonInfo` + `newItems[]`），支援極速連續新增（`handleSaveAndContinue`）
 
 ### 常見問題
 
@@ -768,4 +811,21 @@ A: 需在 Dashboard 的 Product (Cat.) 篩選中勾選 `Azure`，`isAzureFiltere
 
 ---
 
-*此文件由 AI 助手根據 codebase 掃描自動產生，最後更新於 2026-04-07。建議在每次重大變更後更新。*
+*此文件由 AI 助手根據 codebase 掌描自動產生，最後更新於 2026-04-07。建議在每次重大變更後更新。*
+
+---
+
+## 15. Git Commit 歷史（近期）
+
+```
+265f118 (HEAD -> main, origin/main) important update_0407
+f19f661 0407update
+e5d918a feat: update0324_1
+3d25654 feat: update0324
+16ba788 feat: update
+5b065c3 feat: 完成權限管理、必填防呆、全新 UI 配色與專業 Favicon
+ab39b35 feat: 準備正式上線，加入 Netlify 防呆與 Supabase 串接
+95d388e Complete React refactoring and Supabase CRUD
+f4405d9 rename to index.html
+3a25701 init
+```

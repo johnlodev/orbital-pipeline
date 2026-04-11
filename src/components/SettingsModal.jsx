@@ -15,10 +15,15 @@ const BUILTIN_TITLES = {
   product: 'Cat.',
   stage: 'Stage',
   segment: 'Segment',
+  salesStage: 'Sales Stage',
 };
 
 // DB category key mapping (reqType <-> reqtype)
-const toCategoryDb = (key) => key === 'reqType' ? 'reqtype' : key;
+const toCategoryDb = (key) => {
+  if (key === 'reqType') return 'reqtype';
+  if (key === 'salesStage') return 'salesStage';
+  return key;
+};
 const fromCategoryDb = (cat) => cat === 'reqtype' ? 'reqType' : cat;
 
 export default function SettingsModal({ isOpen, onClose, dictionary, setDictionary, onDictionaryChanged, onDataChanged, showConfirm }) {

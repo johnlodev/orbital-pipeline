@@ -5,7 +5,7 @@ import {
   Plus, MicrosoftExcelLogo, PencilSimple, X, Lock, ArrowsOutCardinal, DownloadSimple,
 } from '@phosphor-icons/react';
 import { dictData as defaultDictData } from '../utils/mockData';
-import { ProductBadge, StageBadge } from './Badges';
+import { ProductBadge, StageBadge, DynamicBadge } from './Badges';
 import { USD_EXCHANGE_RATE } from '../utils/constants';
 import * as XLSX from 'xlsx';
 
@@ -31,11 +31,13 @@ const SHARED_COLUMNS = [
   { id: 'reqType',  label: 'Type',     align: 'left',  width: 100, isCustom: false },
   { id: 'product',  label: 'Cat.',     align: 'left',  width: 130, isCustom: false },
   { id: 'sku',      label: 'SKU',      align: 'left',  width: 260, isCustom: false },
-  { id: 'quantity', label: 'QTY',      align: 'right', width: 90,  isCustom: false },
-  { id: 'amount',   label: 'NTM',      align: 'right', width: 140, isCustom: false },
+  { id: 'quantity', label: 'QTY',      align: 'right', width: 110,  isCustom: false },
+  { id: 'unitPrice',label: 'U/P',      align: 'right', width: 130, isCustom: false },
+  { id: 'amount',   label: 'NTM',      align: 'right', width: 170, isCustom: false },
   { id: 'date',     label: 'POD',      align: 'left',  width: 120, isCustom: false },
   { id: 'stage',    label: 'Stage',    align: 'left',  width: 90,  isCustom: false },
   { id: 'notes',    label: 'Notes',    align: 'left',  width: 200, isCustom: false },
+  { id: 'lud',      label: 'LUD',      align: 'left',  width: 120, isCustom: false },
   { id: 'sales',    label: 'Sales',    align: 'left',  width: 100, isCustom: false },
   { id: 'pm',       label: 'PM',       align: 'left',  width: 110, isCustom: false },
 ];
@@ -47,26 +49,34 @@ const CAIP_EXTRA_COLUMNS = [
   { id: 'sales_stage',    label: 'Sales Stage',  align: 'left',  width: 100, isCustom: false },
   { id: 'referral_id',    label: 'Referral ID',  align: 'left',  width: 120, isCustom: false },
   { id: 'acr_start_month',label: 'ACR Start',    align: 'left',  width: 100, isCustom: false },
-  { id: 'acr_mom',        label: 'ACR/Month',    align: 'right', width: 100, isCustom: false },
-  { id: 'jul',   label: 'Jul',  align: 'right', width: 80, isCustom: false },
-  { id: 'aug',   label: 'Aug',  align: 'right', width: 80, isCustom: false },
-  { id: 'sep',   label: 'Sep',  align: 'right', width: 80, isCustom: false },
-  { id: 'oct',   label: 'Oct',  align: 'right', width: 80, isCustom: false },
-  { id: 'nov',   label: 'Nov',  align: 'right', width: 80, isCustom: false },
-  { id: 'dec',   label: 'Dec',  align: 'right', width: 80, isCustom: false },
-  { id: 'jan',   label: 'Jan',  align: 'right', width: 80, isCustom: false },
-  { id: 'feb',   label: 'Feb',  align: 'right', width: 80, isCustom: false },
-  { id: 'mar',   label: 'Mar',  align: 'right', width: 80, isCustom: false },
-  { id: 'apr',   label: 'Apr',  align: 'right', width: 80, isCustom: false },
-  { id: 'may',   label: 'May',  align: 'right', width: 80, isCustom: false },
-  { id: 'jun',   label: 'Jun',  align: 'right', width: 80, isCustom: false },
-  { id: 'q1',    label: 'Q1',   align: 'right', width: 80, isCustom: false },
-  { id: 'q2',    label: 'Q2',   align: 'right', width: 80, isCustom: false },
-  { id: 'q3',    label: 'Q3',   align: 'right', width: 80, isCustom: false },
-  { id: 'q4',    label: 'Q4',   align: 'right', width: 80, isCustom: false },
+  { id: 'acr_mom',        label: 'ACR/Month',    align: 'right', width: 110, isCustom: false },
+  { id: 'jul',   label: 'Jul',  align: 'right', width: 90, isCustom: false },
+  { id: 'aug',   label: 'Aug',  align: 'right', width: 90, isCustom: false },
+  { id: 'sep',   label: 'Sep',  align: 'right', width: 90, isCustom: false },
+  { id: 'oct',   label: 'Oct',  align: 'right', width: 90, isCustom: false },
+  { id: 'nov',   label: 'Nov',  align: 'right', width: 90, isCustom: false },
+  { id: 'dec',   label: 'Dec',  align: 'right', width: 90, isCustom: false },
+  { id: 'jan',   label: 'Jan',  align: 'right', width: 90, isCustom: false },
+  { id: 'feb',   label: 'Feb',  align: 'right', width: 90, isCustom: false },
+  { id: 'mar',   label: 'Mar',  align: 'right', width: 90, isCustom: false },
+  { id: 'apr',   label: 'Apr',  align: 'right', width: 90, isCustom: false },
+  { id: 'may',   label: 'May',  align: 'right', width: 90, isCustom: false },
+  { id: 'jun',   label: 'Jun',  align: 'right', width: 90, isCustom: false },
+  { id: 'q1',    label: 'Q1',   align: 'right', width: 100, isCustom: false },
+  { id: 'q2',    label: 'Q2',   align: 'right', width: 100, isCustom: false },
+  { id: 'q3',    label: 'Q3',   align: 'right', width: 100, isCustom: false },
+  { id: 'q4',    label: 'Q4',   align: 'right', width: 100, isCustom: false },
 ];
 
 const CAIP_NUM_IDS = new Set(['acr_mom','jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','q1','q2','q3','q4']);
+
+// AIBS Renew-only extra columns
+const RENEW_EXTRA_COLUMNS = [
+  { id: 'expDate',       label: 'EXP',          align: 'left',  width: 130, isCustom: false },
+  { id: 'segment',       label: 'Segment',      align: 'left',  width: 130, isCustom: false },
+  { id: 'sales_stage',   label: 'Sales Stage',  align: 'left',  width: 130, isCustom: false },
+  { id: 'referral_id',   label: 'Referral ID',  align: 'left',  width: 140, isCustom: false },
+];
 
 const INITIAL_COLUMNS = SHARED_COLUMNS;
 
@@ -83,6 +93,7 @@ const PAGE_SIZE_OPTIONS = [7, 15, 30, 0]; // 0 = 全部
 // ===================================================================
 export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDrawer, onEditRecord, onUpdateRecord, onOpenImport, dictionary, customColumns, setCustomColumns, userRole, currentUserPermissions, currentUserEmail, viewMode = 'AIBS', showConfirm }) {
   const isCAIP = viewMode === 'CAIP';
+  const isRenew = viewMode === 'AIBS_RENEW';
   const dictData = dictionary || defaultDictData;
 
   // ── Inline prompt state (replaces window.prompt) ──
@@ -119,16 +130,28 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
   const rbacData = useMemo(() => {
     let result = data;
-    // ── ViewMode filter: AIBS = 非 Azure, CAIP = 僅 Azure ──
+    // ── ViewMode filter: AIBS = 非 Azure, CAIP = 僅 Azure, AIBS_RENEW = 非 Azure + 續約 ──
     if (isCAIP) {
       result = result.filter(r => r.product === 'Azure');
+    } else if (isRenew) {
+      const RENEW_TYPES = ['原案續約', '續約增購', '降級購買', '未續約'];
+      result = result.filter(r => {
+        const code = (r.product || '').toLowerCase();
+        const type = r.reqType || '';
+        return code === 'mw-r' || RENEW_TYPES.some(t => type.includes(t));
+      });
     } else {
-      result = result.filter(r => r.product !== 'Azure');
+      const RENEW_TYPES = ['原案續約', '續約增購', '降級購買', '未續約'];
+      result = result.filter(r => {
+        const code = (r.product || '').toLowerCase();
+        const type = r.reqType || '';
+        return code !== 'azure' && code !== 'mw-r' && !RENEW_TYPES.some(t => type.includes(t));
+      });
     }
     if (isGuest) return [];
     if (userRole?.role === 'sales') return result.filter(r => r.sales === userRole.code);
     return result;
-  }, [data, userRole, isGuest, isCAIP]);
+  }, [data, userRole, isGuest, isCAIP, isRenew]);
 
   function getNameFromDict(dictKey, code) {
     const entry = dictData[dictKey]?.find(d => d.code === code);
@@ -136,7 +159,17 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   }
 
   // --- Base columns depend on viewMode ---
-  const BASE_COLUMNS = useMemo(() => isCAIP ? [...SHARED_COLUMNS, ...CAIP_EXTRA_COLUMNS] : SHARED_COLUMNS, [isCAIP]);
+  const BASE_COLUMNS = useMemo(() => {
+    if (isCAIP) return [...SHARED_COLUMNS, ...CAIP_EXTRA_COLUMNS];
+    if (isRenew) {
+      // Insert EXP after POD (date)
+      const cols = [...SHARED_COLUMNS];
+      const podIdx = cols.findIndex(c => c.id === 'date');
+      cols.splice(podIdx + 1, 0, ...RENEW_EXTRA_COLUMNS);
+      return cols;
+    }
+    return SHARED_COLUMNS;
+  }, [isCAIP, isRenew]);
 
   // --- (4) Columns state for drag-and-drop reorder (unified: built-in + custom) ---
   const [columns, setColumns] = useState(() => [
@@ -368,6 +401,9 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   const [filterPMs, setFilterPMs] = useState([]);
   const [filterAcrPositive, setFilterAcrPositive] = useState([]);
   const [filterSegments, setFilterSegments] = useState([]);
+  const [filterExpStart, setFilterExpStart] = useState('');
+  const [filterExpEnd, setFilterExpEnd] = useState('');
+  const [filterSalesStages, setFilterSalesStages] = useState([]);
 
   // Sorting
   const [sortCol, setSortCol] = useState(null);
@@ -394,7 +430,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   }, []);
 
   // Reset page when filters or page size change
-  useEffect(() => { setCurrentPage(1); }, [activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterAcrPositive, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterExpStart, filterExpEnd, filterSalesStages, filterAcrPositive, pageSize]);
 
   // ─── Derived: filtered + sorted data ───
   const filteredData = useMemo(() => {
@@ -418,6 +454,11 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     if (filterSegments.length > 0) result = result.filter(r => filterSegments.includes(r.segment));
     if (filterDateStart) result = result.filter(r => r.date >= filterDateStart);
     if (filterDateEnd) result = result.filter(r => r.date <= filterDateEnd);
+    // Renew: EXP date range filter
+    if (filterExpStart) result = result.filter(r => (r.expDate || '') >= filterExpStart);
+    if (filterExpEnd) result = result.filter(r => (r.expDate || '') <= filterExpEnd);
+    // Renew: Sales Stage filter
+    if (filterSalesStages.length > 0) result = result.filter(r => filterSalesStages.includes(r.sales_stage));
     // CAIP: filter rows where selected month/quarter columns > 0
     if (filterAcrPositive.length > 0) {
       result = result.filter(r => filterAcrPositive.every(k => Number(r[k]) > 0));
@@ -435,7 +476,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       });
     }
     return result;
-  }, [rbacData, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterAcrPositive, sortCol, sortAsc]);
+  }, [rbacData, activeTab, searchTerm, filterTypes, filterProducts, filterStages, filterPMs, filterSegments, filterDateStart, filterDateEnd, filterExpStart, filterExpEnd, filterSalesStages, filterAcrPositive, sortCol, sortAsc]);
 
   // Tab badge counts (from full data)
   const tabCounts = useMemo(() => {
@@ -446,8 +487,15 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     return c;
   }, [rbacData, tabs]);
 
-  // KPI
-  const totalAmount = useMemo(() => filteredData.reduce((s, r) => s + (r.amount || 0), 0), [filteredData]);
+  // KPI — dynamic: if rows are checked, sum only checked rows
+  const totalAmount = useMemo(() => {
+    const checkedRows = filteredData.filter(r => selectedIds.has(r.id));
+    const rows = checkedRows.length > 0 ? checkedRows : filteredData;
+    return rows.reduce((s, r) => s + (r.amount || 0), 0);
+  }, [filteredData, selectedIds]);
+  const selectedCount = useMemo(() => {
+    return filteredData.filter(r => selectedIds.has(r.id)).length;
+  }, [filteredData, selectedIds]);
 
   // ─── Group by EU + Partner ───
   const groupedData = useMemo(() => {
@@ -497,6 +545,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     setFilterDateStart(''); setFilterDateEnd('');
     setFilterTypes([]); setFilterProducts([]); setFilterStages([]); setFilterPMs([]);
     setFilterAcrPositive([]); setFilterSegments([]);
+    setFilterExpStart(''); setFilterExpEnd(''); setFilterSalesStages([]);
   }
 
   // ── WYSIWYG Excel Export ──
@@ -518,7 +567,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       return;
     }
 
-    // 3. Build export data
+    // 3. Build export data — split renewal fields for clean pivot-ready output
     const exportData = rows.map(row => {
       const obj = {};
       for (const col of exportCols) {
@@ -526,12 +575,23 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
         const header = col.label;
         let val = row[key];
 
+        // Resolve dict labels for export readability
+        if (key === 'sales' || key === 'pm' || key === 'stage' || key === 'reqType' || key === 'product') {
+          val = getNameFromDict(key === 'reqType' ? 'reqType' : key, val) || val;
+        }
+
         // Format specific fields
         if (key === 'amount') {
+          val = val != null ? Number(val) : 0;
+        } else if (key === 'quantity') {
+          val = val != null ? Number(val) : 0;
+        } else if (key === 'unitPrice') {
           val = val != null ? Number(val) : 0;
         } else if (CAIP_NUM_IDS.has(key)) {
           val = val != null ? Number(val) : 0;
         } else if (key === 'date') {
+          val = val || '';
+        } else if (key === 'expDate') {
           val = val || '';
         } else {
           val = val ?? '';
@@ -539,6 +599,25 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
         obj[header] = val;
       }
+
+      // Renew view: split renewal fields into dedicated columns for pivot analysis
+      // LUD (Last Updated Date)
+      obj['上次更新日期 (LUD)'] = row.lud || '';
+
+      if (isRenew) {
+        const RENEW_KW = ['續約', '降級購買', '未續約'];
+        const hasRenewData = RENEW_KW.some(kw => row.reqType?.includes(kw));
+        obj['原到期日(EXP)'] = hasRenewData ? (row.expDate || '') : '';
+        obj['原 SKU'] = hasRenewData ? (row.originalSku || '') : '';
+        obj['原 QTY'] = hasRenewData ? (Number(row.originalQty) || 0) : 0;
+        obj['原 U/P'] = hasRenewData ? (Number(row.originalUnitPrice) || 0) : 0;
+        obj['原 NTM'] = hasRenewData ? (Number(row.originalNtm) || 0) : 0;
+        obj['新 QTY'] = Number(row.quantity) || 0;
+        obj['新 NTM'] = Number(row.amount) || 0;
+        obj['QTY 差異'] = obj['新 QTY'] - obj['原 QTY'];
+        obj['NTM 差異'] = obj['新 NTM'] - obj['原 NTM'];
+      }
+
       return obj;
     });
 
@@ -546,8 +625,8 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     const ws = XLSX.utils.json_to_sheet(exportData);
 
     // Auto-fit column widths
-    const colWidths = exportCols.map(col => {
-      const header = col.label;
+    const allHeaders = Object.keys(exportData[0] || {});
+    const colWidths = allHeaders.map(header => {
       let maxLen = header.length;
       for (const row of exportData) {
         const cellVal = String(row[header] ?? '');
@@ -558,12 +637,12 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     ws['!cols'] = colWidths;
 
     const wb = XLSX.utils.book_new();
-    const sheetName = isCAIP ? 'CAIP' : 'AIBS';
+    const sheetName = isCAIP ? 'CAIP' : isRenew ? 'AIBS_Renew' : 'AIBS';
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
     const today = new Date();
     const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-    const fileName = `${sheetName}商機總表_${dateStr}.xlsx`;
+    const fileName = `${sheetName}_Pipeline_${dateStr}.xlsx`;
 
     XLSX.writeFile(wb, fileName);
     toast.success(`已匯出 ${rows.length} 筆資料至 ${fileName}`);
@@ -630,9 +709,22 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           '移轉': 'bg-amber-50 text-amber-700 border-amber-200',
           '轉移': 'bg-amber-50 text-amber-700 border-amber-200',
           'transfer': 'bg-amber-50 text-amber-700 border-amber-200',
+          '原案續約': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+          '續約增購': 'bg-violet-50 text-violet-700 border-violet-200',
+          '降級購買': 'bg-orange-50 text-orange-700 border-orange-200',
+          '未續約': 'bg-red-50 text-red-700 border-red-200',
         };
+        // Deterministic hash fallback for unknown types
+        const TYPE_PALETTE = [
+          'bg-sky-50 text-sky-700 border-sky-200',
+          'bg-cyan-50 text-cyan-700 border-cyan-200',
+          'bg-emerald-50 text-emerald-700 border-emerald-200',
+          'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+          'bg-pink-50 text-pink-700 border-pink-200',
+        ];
+        function typeHash(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
         const reqLabel = getNameFromDict('reqType', row.reqType);
-        const typeCls = typeColorMap[reqLabel] || typeColorMap[row.reqType] || 'bg-slate-100/80 text-slate-600 ring-slate-400/20';
+        const typeCls = typeColorMap[reqLabel] || typeColorMap[row.reqType] || TYPE_PALETTE[typeHash(reqLabel || row.reqType || '') % TYPE_PALETTE.length];
         return (
           <div className="group/type relative inline-flex items-center">
             <select
@@ -641,7 +733,17 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
               className={`appearance-none cursor-pointer px-2.5 py-1 pr-6 rounded-md text-[11px] font-medium ring-1 ring-inset outline-none bg-transparent hover:bg-slate-50 focus:ring-2 focus:ring-brand-500/30 focus:bg-white transition-colors duration-200 ${typeCls}`}
               title="點擊切換類型"
             >
-              {(dictData.reqType || []).map(opt => (
+              {(dictData.reqType || [])
+                .filter(opt => {
+                  const label = opt.label || opt.code || '';
+                  if (isRenew) {
+                    const RENEW_KW = ['續約', '降級購買', '未續約'];
+                    return RENEW_KW.some(kw => label.includes(kw));
+                  }
+                  const RENEW_KW_EXCL = ['續約', '降級購買', '未續約'];
+                  return !RENEW_KW_EXCL.some(kw => label.includes(kw));
+                })
+                .map(opt => (
                 <option key={opt.code} value={opt.code}>{opt.label}</option>
               ))}
             </select>
@@ -653,23 +755,59 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
         return <ProductBadge code={row[colKey]} label={getNameFromDict('product', row[colKey])} />;
       case 'stage':
         return <StageBadge stage={row[colKey]} label={getNameFromDict('stage', row[colKey])} />;
-      case 'quantity':
-        return <span className="text-sm font-medium text-slate-500 tabular-nums font-mono">{row.quantity?.toLocaleString?.() ?? row.quantity}</span>;
-      case 'amount':
-        return <span className="text-sm font-medium text-slate-500 tabular-nums font-mono">{row.amount != null ? `NT$ ${row.amount.toLocaleString()}` : '-'}</span>;
+      case 'unitPrice':
+        return <span className="w-full text-right text-sm font-medium text-slate-500 tabular-nums font-mono">{row.unitPrice != null && row.unitPrice !== 0 ? `NT$ ${Number(row.unitPrice).toLocaleString()}` : '-'}</span>;
+      case 'quantity': {
+        if (isRenew && row.originalQty != null) {
+          const oldVal = Number(row.originalQty) || 0;
+          const newVal = Number(row.quantity) || 0;
+          const diff = newVal - oldVal;
+          return (
+            <div className="w-full flex items-center justify-end gap-1.5 text-sm font-mono tabular-nums">
+              <span className="text-slate-400 line-through">{oldVal.toLocaleString()}</span>
+              <span className="text-slate-300 font-bold">➔</span>
+              <span className={`font-bold ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-rose-500' : 'text-slate-700'}`}>{newVal.toLocaleString()}</span>
+            </div>
+          );
+        }
+        return <span className="w-full text-right text-sm font-medium text-slate-500 tabular-nums font-mono">{row.quantity?.toLocaleString?.() ?? row.quantity}</span>;
+      }
+      case 'amount': {
+        if (isRenew && row.originalNtm != null) {
+          const oldVal = Number(row.originalNtm) || 0;
+          const newVal = Number(row.amount) || 0;
+          const diff = newVal - oldVal;
+          return (
+            <div className="w-full flex items-center justify-end gap-1.5 text-sm font-mono tabular-nums">
+              <span className="text-slate-400 line-through">NT$ {oldVal.toLocaleString()}</span>
+              <span className="text-slate-300 font-bold">➔</span>
+              <span className={`font-bold ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-rose-500' : 'text-slate-700'}`}>NT$ {newVal.toLocaleString()}</span>
+            </div>
+          );
+        }
+        return <span className="w-full text-right text-sm font-medium text-slate-500 tabular-nums font-mono">{row.amount != null ? `NT$ ${row.amount.toLocaleString()}` : '-'}</span>;
+      }
       case 'enduser':
-        return <span className="text-sm font-medium text-slate-800">{row.enduser}</span>;
+        return (
+          <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-slate-800" title={row.enduser || ''}>
+            {row.enduser}
+          </div>
+        );
       case 'si':
-        return <span className="text-sm font-medium text-slate-800">{row.si}</span>;
+        return (
+          <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-slate-800" title={row.si || ''}>
+            {row.si}
+          </div>
+        );
       case 'notes':
         return (
-          <span
-            className="text-xs text-slate-400 font-normal cursor-pointer truncate block max-w-[200px] hover:text-brand-600 hover:underline underline-offset-2 transition-colors"
+          <div
+            className="w-full block overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-400 font-normal cursor-pointer hover:text-brand-600 hover:underline underline-offset-2 transition-colors"
             onClick={() => onEditRecord?.(row)}
             title={row.notes || ''}
           >
             {row.notes || '-'}
-          </span>
+          </div>
         );
       case 'sales':
         return <span className="text-sm font-medium text-slate-800">{getNameFromDict('sales', row.sales)}</span>;
@@ -677,13 +815,34 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
         return <span className="text-sm font-medium text-slate-800">{getNameFromDict('pm', row.pm)}</span>;
       case 'date':
         return <span className="text-slate-500 tabular-nums">{row.date}</span>;
-      case 'sku':
-        return <span className="font-medium text-slate-600">{row.sku}</span>;
+      case 'expDate':
+        return <span className="text-slate-500 tabular-nums">{row.expDate || '-'}</span>;
+      case 'sku': {
+        if (isRenew && row.originalSku && row.originalSku !== row.sku) {
+          return (
+            <div className="w-full overflow-hidden">
+              <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap font-medium text-slate-600" title={row.sku}>{row.sku}</div>
+              <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-400" title={row.originalSku}>[原] {row.originalSku}</div>
+            </div>
+          );
+        }
+        return (
+          <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap font-medium text-slate-600" title={row.sku || ''}>
+            {row.sku}
+          </div>
+        );
+      }
+      case 'sales_stage':
+        return row.sales_stage ? <DynamicBadge code={row.sales_stage} /> : <span className="text-slate-400">-</span>;
+      case 'segment':
+        return row.segment ? <DynamicBadge code={row.segment} /> : <span className="text-slate-400">-</span>;
+      case 'lud':
+        return <span className="text-slate-500 tabular-nums text-xs">{row.lud || '-'}</span>;
       default:
         // CAIP numeric fields: formatted numbers
         if (CAIP_NUM_IDS.has(colKey)) {
           const val = row[colKey];
-          return <span className="font-mono text-slate-600 tabular-nums">{val != null && val !== 0 ? Number(val).toLocaleString() : '-'}</span>;
+          return <span className="w-full text-right font-mono text-slate-600 tabular-nums">{val != null && val !== 0 ? Number(val).toLocaleString() : '-'}</span>;
         }
         return <span className="text-slate-500">{row[colKey] ?? '-'}</span>;
     }
@@ -703,15 +862,19 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           </div>
         );
       case 'si':
-        return <span className="text-sm font-medium text-slate-800">{group.si}</span>;
+        return (
+          <div className="w-full block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-slate-800" title={group.si || ''}>
+            {group.si}
+          </div>
+        );
       case 'sales':
         return <span className="text-sm font-medium text-slate-800">{getNameFromDict('sales', group.sales)}</span>;
       case 'pm':
         return <span className="text-sm font-medium text-slate-800">{getNameFromDict('pm', group.pm)}</span>;
       case 'amount':
-        return <span className="text-sm font-bold text-slate-900 tabular-nums font-mono">NT$ {group.totalAmount.toLocaleString()}</span>;
+        return <span className="w-full text-right text-sm font-bold text-slate-900 tabular-nums font-mono">NT$ {group.totalAmount.toLocaleString()}</span>;
       case 'quantity':
-        return <span className="text-sm font-semibold text-slate-800 tabular-nums font-mono">{group.children.reduce((s, r) => s + (r.quantity || 0), 0).toLocaleString()}</span>;
+        return <span className="w-full text-right text-sm font-semibold text-slate-800 tabular-nums font-mono">{group.children.reduce((s, r) => s + (r.quantity || 0), 0).toLocaleString()}</span>;
       default:
         return null;
     }
@@ -745,7 +908,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
             <div className="flex items-center gap-2 mb-1">
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 text-brand-700 tracking-wider border border-brand-200">MetaAge | Microsoft</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900">{isCAIP ? 'CAIP List' : 'AIBS List'}</h1>
+            <h1 className="text-xl font-semibold text-gray-900">{isCAIP ? 'CAIP List' : isRenew ? 'AIBS Renew List' : 'AIBS List'}</h1>
           </div>
 
           <div className="flex flex-wrap md:flex-nowrap items-center gap-3 lg:justify-end">
@@ -764,7 +927,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
             </button>
             <div className="h-8 w-px bg-gray-200 mx-2 hidden lg:block" />
             <div className="text-right hidden lg:block">
-              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">預估商機總額</p>
+              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">預估商機總額{selectedCount > 0 && <span className="text-brand-600 normal-case tracking-normal ml-1">(已選 {selectedCount} 筆)</span>}</p>
               <div className="flex flex-col items-end">
                 <p className="text-lg font-bold text-brand-600 leading-none">
                   NT$ {totalAmount.toLocaleString()} <span className="text-xs font-medium text-gray-500 ml-0.5">TWD</span>
@@ -873,13 +1036,50 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-4">
-                      <FilterCheckboxGroup title="Type" items={dictData.reqType} checked={filterTypes} onToggle={v => toggleCheckboxFilter(v, setFilterTypes)} />
-                      <FilterCheckboxGroup title="Cat." items={(dictData.product || []).filter(d => isCAIP ? d.code === 'Azure' : d.code !== 'Azure')} checked={filterProducts} onToggle={v => toggleCheckboxFilter(v, setFilterProducts)} />
+                      <FilterCheckboxGroup title="Type" items={(() => {
+                        if (isRenew) {
+                          const RENEW_TYPES = ['原案續約', '續約增購', '降級購買', '未續約'];
+                          return (dictData.reqType || []).filter(d => RENEW_TYPES.some(t => (d.label || d.code || '').includes(t)));
+                        }
+                        return dictData.reqType;
+                      })()} checked={filterTypes} onToggle={v => toggleCheckboxFilter(v, setFilterTypes)} />
+                      <FilterCheckboxGroup title="Cat." items={(dictData.product || []).filter(d => {
+                        const code = d.code.toLowerCase();
+                        if (isCAIP) return code === 'azure';
+                        if (isRenew) return code === 'mw-r';
+                        return code !== 'azure' && code !== 'mw-r';
+                      })} checked={filterProducts} onToggle={v => toggleCheckboxFilter(v, setFilterProducts)} />
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-5">
                       <FilterCheckboxGroup title="Stage" items={dictData.stage} checked={filterStages} onToggle={v => toggleCheckboxFilter(v, setFilterStages)} />
                       <FilterCheckboxGroup title="PM" items={dictData.pm} checked={filterPMs} onToggle={v => toggleCheckboxFilter(v, setFilterPMs)} />
                     </div>
+                    {/* RENEW: EXP date range + Segment + Sales Stage */}
+                    {isRenew && (
+                      <>
+                        <div className="mb-4">
+                          <label className="block text-xs font-bold text-gray-700 mb-1">EXP (原到期日)</label>
+                          <div className="flex items-center gap-2">
+                            <input type="date" value={filterExpStart} onChange={e => setFilterExpStart(e.target.value)} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:border-brand-500 outline-none" />
+                            <span className="text-gray-400 text-xs">至</span>
+                            <input type="date" value={filterExpEnd} onChange={e => setFilterExpEnd(e.target.value)} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:border-brand-500 outline-none" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          {(() => {
+                            const segOpts = [...new Set(rbacData.map(r => r.segment).filter(Boolean))].sort().map(s => ({ code: s, label: s }));
+                            return segOpts.length > 0 ? <FilterCheckboxGroup title="Segment" items={segOpts} checked={filterSegments} onToggle={v => toggleCheckboxFilter(v, setFilterSegments)} /> : null;
+                          })()}
+                          {(() => {
+                            const salesStageDict = dictData?.salesStage || dictData?.['Sales Stage'] || dictData?.sales_stage || [];
+                            const stageOpts = salesStageDict.length > 0
+                              ? salesStageDict
+                              : [...new Set(rbacData.map(r => r.sales_stage).filter(Boolean))].sort().map(s => ({ code: s, label: s }));
+                            return stageOpts.length > 0 ? <FilterCheckboxGroup title="Sales Stage" items={stageOpts} checked={filterSalesStages} onToggle={v => toggleCheckboxFilter(v, setFilterSalesStages)} /> : null;
+                          })()}
+                        </div>
+                      </>
+                    )}
                     {/* SEGMENT filter (CAIP only, dynamic from data) */}
                     {isCAIP && (() => {
                       const segmentOptions = [...new Set(rbacData.map(r => r.segment).filter(Boolean))].sort().map(s => ({ code: s, label: s }));
@@ -1018,7 +1218,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
 
           {/* ── 4. Table (scrollable area) ── */}
           <div className="flex-1 overflow-auto grid-scroll relative z-10">
-            <table ref={tableRef} className="w-full text-left border-collapse whitespace-nowrap min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+            <table ref={tableRef} className="w-full text-left border-collapse whitespace-nowrap" style={{ tableLayout: 'fixed', minWidth: columns.filter(c => visibleCols[c.id] !== false).reduce((sum, c) => sum + (c.width || 100), 0) + 200 }}>
               <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm shadow-[0_1px_0_0_rgba(0,0,0,0.04)] z-20 text-xs uppercase tracking-wider text-slate-400 font-semibold select-none">
                 <tr>
                   {/* Select-all checkbox — sticky */}
@@ -1156,12 +1356,13 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                             if (visibleCols[col.id] === false) return null;
                             const isFirstVisible = col.id === columns.find(c => visibleCols[c.id] !== false)?.id;
                             const stickyTd = isFirstVisible ? `sticky left-[44px] z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)] ${isExpanded ? '!bg-blue-50' : '!bg-white'}` : '';
+                            const tdW = colWidths[col.id] || col.width;
                             return (
                               <td
                                 key={col.id}
                                 data-col={col.id}
                                 className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : ''} ${stickyTd}`}
-                                style={{ width: colWidths[col.id] || col.width }}
+                                style={{ width: tdW, minWidth: tdW, maxWidth: tdW }}
                               >
                                 {renderParentCell(group, col.id, isExpanded)}
                               </td>
@@ -1194,12 +1395,13 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                                 if (visibleCols[col.id] === false) return null;
                                 const isFirstVisible = col.id === columns.find(c => visibleCols[c.id] !== false)?.id;
                                 const stickyTd = isFirstVisible ? `sticky left-[44px] z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)] ${isSelected ? '!bg-blue-50' : '!bg-slate-50'}` : '';
+                                const tdW = colWidths[col.id] || col.width;
                                 return (
                                   <td
                                     key={col.id}
                                     data-col={col.id}
                                     className={`px-4 py-2 overflow-hidden text-ellipsis ${col.align === 'right' ? 'text-right' : ''} truncate ${stickyTd}`}
-                                    style={{ width: colWidths[col.id] || col.width }}
+                                    style={{ width: tdW, minWidth: tdW, maxWidth: tdW }}
                                   >
                                     {renderChildCell(row, col.id)}
                                   </td>

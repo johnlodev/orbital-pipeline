@@ -70,8 +70,18 @@ function AuthenticatedApp({ session }) {
 
   function fromDbRecord(row) {
     if (!row) return row
-    const { reqtype, ...rest } = row
-    const out = { ...rest, reqType: reqtype }
+    const { reqtype, exp_date, original_sku, original_qty, original_unit_price, original_ntm, unit_price, ...rest } = row
+    const out = {
+      ...rest,
+      reqType: reqtype,
+      expDate: exp_date ?? '',
+      originalSku: original_sku ?? '',
+      originalQty: original_qty != null ? Number(original_qty) : 0,
+      originalUnitPrice: original_unit_price != null ? Number(original_unit_price) : 0,
+      originalNtm: original_ntm != null ? Number(original_ntm) : 0,
+      unitPrice: unit_price != null ? Number(unit_price) : 0,
+      lud: row.lud ?? '',
+    }
     // CAIP text fields: null → ''
     for (const f of CAIP_TEXT_FIELDS) {
       if (out[f] == null) out[f] = ''
@@ -84,8 +94,21 @@ function AuthenticatedApp({ session }) {
   }
   function toDbRecord(record) {
     if (!record) return record
-    const { reqType, ...rest } = record
-    const out = { ...rest, reqtype: reqType }
+    const { reqType, expDate, originalSku, originalQty, originalUnitPrice, originalNtm, unitPrice, ...rest } = record
+    const out = {
+      ...rest,
+      reqtype: reqType,
+      exp_date: expDate && expDate !== '-' ? expDate : null,
+      original_sku: originalSku || null,
+      original_qty: Number(originalQty) || 0,
+      original_unit_price: Number(originalUnitPrice) || 0,
+      original_ntm: Number(originalNtm) || 0,
+      unit_price: Number(unitPrice) || 0,
+      lud: record.lud && record.lud !== '-' ? record.lud : null,
+    }
+    // Date fields: empty string → null
+    if (out.date === '' || out.date === '-') out.date = null
+    if (out.acr_start_month === '') out.acr_start_month = null
     // 確保數字欄位寫入時為 number
     for (const f of CAIP_NUM_FIELDS) {
       if (out[f] !== undefined) out[f] = Number(out[f]) || 0
@@ -111,8 +134,15 @@ function AuthenticatedApp({ session }) {
       // 將 flat rows 轉成 { category: [{label, code, email, _dbId}] } 結構
       const grouped = {}
       const customTitles = {} // 自訂類別的顯示名稱 (from __meta__ rows)
+      // category key 正規化：統一到 camelCase
+      const normalizeCat = (c) => {
+        if (c === 'reqtype') return 'reqType'
+        const lower = c.replace(/[\s_-]+/g, '').toLowerCase()
+        if (lower === 'salesstage') return 'salesStage'
+        return c
+      }
       for (const row of data) {
-        const cat = row.category === 'reqtype' ? 'reqType' : row.category
+        const cat = normalizeCat(row.category)
         // __meta__ row 用來存自訂類別的顯示名稱，不放入選項清單
         if (row.code === '__meta__') {
           customTitles[cat] = row.label
@@ -136,7 +166,7 @@ function AuthenticatedApp({ session }) {
       }
 
       // 確保所有內建 key 都存在（即使 DB 中該類別無資料）
-      const builtinKeys = ['sales', 'pm', 'reqType', 'product', 'stage', 'segment']
+      const builtinKeys = ['sales', 'pm', 'reqType', 'product', 'stage', 'segment', 'salesStage']
       for (const key of builtinKeys) {
         if (!grouped[key]) grouped[key] = []
       }
@@ -242,7 +272,9 @@ function AuthenticatedApp({ session }) {
   // ── Import: 批次寫入 Supabase，成功後 refetch ──
   async function handleImportData(records) {
     try {
-      const dbRecords = records.map(r => ({ ...toDbRecord(r), created_by_email: currentUserEmail }))
+      const now = new Date()
+      const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0')
+      const dbRecords = records.map(r => ({ ...toDbRecord({ ...r, lud: r.lud || today }), created_by_email: currentUserEmail }))
       const { error } = await supabase.from('pipeline').insert(dbRecords)
       if (error) throw error
       await fetchData()
@@ -334,28 +366,37 @@ function AuthenticatedApp({ session }) {
 
   // ── Create / Update: Drawer 儲存 → Supabase upsert ──
   async function handleSaveRecord(recordOrArray) {
+    const now = new Date()
+    const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0')
+    const stampLud = r => ({ ...r, lud: today })
     try {
-      if (editingRecord?.id) {
-        // ── Edit mode: single record update ──
-        const { error } = await supabase
-          .from('pipeline')
-          .update(toDbRecord(recordOrArray))
-          .eq('id', editingRecord.id)
-        if (error) throw error
+      if (Array.isArray(recordOrArray)) {
+        // ── Mixed array: split by id presence ──
+        const toUpdate = recordOrArray.filter(r => r.id).map(stampLud)
+        const toInsert = recordOrArray.filter(r => !r.id).map(stampLud)
+        // UPDATE existing records
+        for (const rec of toUpdate) {
+          const { id, ...rest } = rec
+          const { error } = await supabase.from('pipeline').update(toDbRecord(rest)).eq('id', id)
+          if (error) throw error
+        }
+        // INSERT new records
+        if (toInsert.length > 0) {
+          const dbRecords = toInsert.map(r => ({ ...toDbRecord(r), created_by_email: currentUserEmail }))
+          const { error } = await supabase.from('pipeline').insert(dbRecords)
+          if (error) throw error
+        }
         await fetchData()
-        toast.success('資料已成功儲存！')
-      } else if (Array.isArray(recordOrArray)) {
-        // ── New mode (multi-item): bulk insert ──
-        const dbRecords = recordOrArray.map(r => ({ ...toDbRecord(r), created_by_email: currentUserEmail }))
-        const { error } = await supabase.from('pipeline').insert(dbRecords)
-        if (error) throw error
-        await fetchData()
-        toast.success(`已成功新增 ${recordOrArray.length} 筆商機！`)
+        const parts = []
+        if (toUpdate.length > 0) parts.push(`更新 ${toUpdate.length} 筆`)
+        if (toInsert.length > 0) parts.push(`新增 ${toInsert.length} 筆`)
+        toast.success(`已成功${parts.join('、')}商機！`)
       } else {
-        // ── New mode (single record fallback) ──
+        // ── Single record fallback (新增) ──
+        const stamped = stampLud(recordOrArray)
         const { error } = await supabase
           .from('pipeline')
-          .insert({ ...toDbRecord(recordOrArray), created_by_email: currentUserEmail })
+          .insert({ ...toDbRecord(stamped), created_by_email: currentUserEmail })
         if (error) throw error
         await fetchData()
         toast.success('資料已成功儲存！')
@@ -363,14 +404,6 @@ function AuthenticatedApp({ session }) {
     } catch (err) {
       console.error('Save error:', err.message)
       toast.error('儲存失敗：' + err.message)
-      // Optimistic fallback
-      if (editingRecord?.id) {
-        setDbData(prev => prev.map(item => item.id === editingRecord.id ? { ...item, ...recordOrArray } : item))
-      } else if (Array.isArray(recordOrArray)) {
-        setDbData(prev => [...recordOrArray.map((r, i) => ({ ...r, id: 'rec_' + Date.now() + '_' + i })), ...prev])
-      } else {
-        setDbData(prev => [{ ...recordOrArray, id: 'rec_' + Date.now() }, ...prev])
-      }
     }
     setIsDrawerOpen(false)
     setEditingRecord(null)
@@ -427,7 +460,7 @@ function AuthenticatedApp({ session }) {
         ) : currentView === 'dashboard' ? (
           <Dashboard data={dbData} dictionary={dictionary} userRole={userRole} currentUserPermissions={currentUserPermissions} />
         ) : (
-          <PipelineTable data={dbData} onDelete={handleDeleteRecord} onBatchDelete={handleBatchDeleteRecords} onOpenDrawer={handleOpenNewDrawer} onEditRecord={handleEditRecord} onUpdateRecord={handleUpdateRecord} onOpenImport={() => setIsImportOpen(true)} dictionary={dictionary} customColumns={customColumns} setCustomColumns={setCustomColumns} userRole={userRole} currentUserPermissions={currentUserPermissions} currentUserEmail={currentUserEmail} viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'} showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })} />
+          <PipelineTable data={dbData} onDelete={handleDeleteRecord} onBatchDelete={handleBatchDeleteRecords} onOpenDrawer={handleOpenNewDrawer} onEditRecord={handleEditRecord} onUpdateRecord={handleUpdateRecord} onOpenImport={() => setIsImportOpen(true)} dictionary={dictionary} customColumns={customColumns} setCustomColumns={setCustomColumns} userRole={userRole} currentUserPermissions={currentUserPermissions} currentUserEmail={currentUserEmail} viewMode={currentView === 'caip' ? 'CAIP' : currentView === 'aibs_renew' ? 'AIBS_RENEW' : 'AIBS'} showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })} />
         )}
       </main>
 
@@ -440,7 +473,7 @@ function AuthenticatedApp({ session }) {
         editingRecord={editingRecord}
         customColumns={customColumns}
         dictionary={dictionary}
-        viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'}
+        viewMode={currentView === 'caip' ? 'CAIP' : currentView === 'aibs_renew' ? 'AIBS_RENEW' : 'AIBS'}
         showConfirm={(msg, cb) => setConfirmState({ open: true, message: msg, onConfirm: cb })}
       />
 
@@ -461,7 +494,7 @@ function AuthenticatedApp({ session }) {
         onClose={() => setIsImportOpen(false)}
         dictionary={dictionary}
         onImport={handleImportData}
-        viewMode={currentView === 'caip' ? 'CAIP' : 'AIBS'}
+        viewMode={currentView === 'caip' ? 'CAIP' : currentView === 'aibs_renew' ? 'AIBS_RENEW' : 'AIBS'}
       />
 
       {/* Confirm Modal (replaces window.confirm) */}

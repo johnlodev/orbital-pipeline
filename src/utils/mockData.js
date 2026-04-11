@@ -16,6 +16,7 @@ export const dictData = {
   product: [
     { label: 'Azure', code: 'Azure' },
     { label: 'Modern Work', code: 'MW' },
+    { label: 'MW-R', code: 'mw-r' },
     { label: 'On-Premise', code: 'On-Prem' },
   ],
   stage: [

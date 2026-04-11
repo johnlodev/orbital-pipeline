@@ -11,12 +11,14 @@ import {
   X,
   Lock,
   CloudArrowUp,
+  ArrowClockwise,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 
 const navItems = [
   { key: 'aibs', label: 'AIBS List', icon: Table },
+  { key: 'aibs_renew', label: 'AIBS Renew List', icon: ArrowClockwise },
   { key: 'caip', label: 'CAIP List', icon: CloudArrowUp },
   { key: 'dashboard', label: 'Dashboard', icon: ChartPieSlice },
 ];

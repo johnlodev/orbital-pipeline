@@ -34,6 +34,10 @@ const TYPE_COLORS = {
   '移轉': 'bg-amber-50/80 text-amber-700 ring-amber-600/20',
   '轉移': 'bg-amber-50/80 text-amber-700 ring-amber-600/20',
   'transfer': 'bg-amber-50/80 text-amber-700 ring-amber-600/20',
+  '原案續約': 'bg-indigo-50/80 text-indigo-700 ring-indigo-600/20',
+  '續約增購': 'bg-violet-50/80 text-violet-700 ring-violet-600/20',
+  '降級購買': 'bg-orange-50/80 text-orange-700 ring-orange-600/20',
+  '未續約': 'bg-red-50/80 text-red-700 ring-red-600/20',
 };
 
 const PRODUCT_COLORS = {
