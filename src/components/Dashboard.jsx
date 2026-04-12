@@ -19,6 +19,7 @@ import {
   Barcode,
   ArrowsCounterClockwise,
   MagnifyingGlass,
+  DotsSixVertical,
 } from '@phosphor-icons/react';
 import {
   Chart as ChartJS,
@@ -127,12 +128,12 @@ const MWR_CHART_DEFS = [
   { id: 'mwrMonthlyARR', label: 'Monthly ARR Renewal Comparison' },
   { id: 'mwrType',      label: 'Type 佔比' },
   { id: 'mwrStage',     label: 'Sales Stage 佔比' },
-  { id: 'mwrPartner',   label: 'Top 5 Partner' },
-  { id: 'rcTopPartner', label: 'Recapture Top 5 Partner' },
-  { id: 'rcLowPartner', label: 'Recapture Lowest 5 Partner' },
-  { id: 'rcLowEU',      label: 'Recapture Lowest 5 EU' },
-  { id: 'mwrEU',        label: 'Top 5 EU' },
-  { id: 'rcTopEU',      label: 'Recapture Top 5 EU' },
+  { id: 'mwrPartner',   label: 'Top 5 NTM (Partner)' },
+  { id: 'rcTopPartner', label: 'Top 5 Recapture Rate (Partner)' },
+  { id: 'rcLowPartner', label: 'Top 5 Lost ARR (Partner)' },
+  { id: 'rcLowEU',      label: 'Top 5 Lost ARR (EU)' },
+  { id: 'mwrEU',        label: 'Top 5 NTM (EU)' },
+  { id: 'rcTopEU',      label: 'Top 5 Recapture Rate (EU)' },
   { id: 'mwrPartnerARR', label: 'ARR Renewal Comparison Top 10 (Partner)' },
   { id: 'mwrSKU',       label: 'Top 10 SKU' },
 ];
@@ -220,6 +221,47 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   );
   const [showChartMenu, setShowChartMenu] = useState(false);
   const chartMenuRef = useRef(null);
+
+  // ── Standard view D&D chart ordering ──
+  const STD_DEFAULT_ORDER = CHART_DEFS.map(c => c.id);
+  const [stdChartOrder, setStdChartOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('standard_chart_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    } catch {}
+    return STD_DEFAULT_ORDER;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('standard_chart_order', JSON.stringify(stdChartOrder)); } catch {}
+  }, [stdChartOrder]);
+
+  const stdDragItem = useRef(null);
+  const stdDragOverItem = useRef(null);
+  const [stdDraggingId, setStdDraggingId] = useState(null);
+
+  const handleStdDragStart = (e, id) => { stdDragItem.current = id; setStdDraggingId(id); e.dataTransfer.effectAllowed = 'move'; };
+  const handleStdDragEnter = (e, id) => { stdDragOverItem.current = id; };
+  const handleStdDragEnd = () => {
+    const fromId = stdDragItem.current;
+    const toId = stdDragOverItem.current;
+    if (fromId && toId && fromId !== toId) {
+      setStdChartOrder(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(fromId);
+        const toIdx = next.indexOf(toId);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, fromId);
+        return next;
+      });
+    }
+    stdDragItem.current = null;
+    stdDragOverItem.current = null;
+    setStdDraggingId(null);
+  };
 
   // ── (3) Dashboard-local filter state ──
   const [searchTerm, setSearchTerm] = useState('');
@@ -674,11 +716,25 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     const sortedPartnerRank = buildRanking(partnerRC);
 
     const rcTopEU = sortedEURank.slice(0, 5);
-    const rcLowEU = sortedEURank.slice().reverse().slice(0, 5);
     const rcTopPartner = sortedPartnerRank.slice(0, 5);
-    const rcLowPartner = sortedPartnerRank.slice().reverse().slice(0, 5);
 
-    return { recapture, totalRenewNTM, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner };
+    // Lost ARR = originalNtm - ntm (only keep positive loss, sorted desc by loss amount)
+    const buildLostARR = (acc) => Object.entries(acc)
+      .filter(([, v]) => v.totalOriginalNtm > 0)
+      .map(([name, v]) => ({
+        name,
+        lostARR: v.totalOriginalNtm - v.totalNtm,
+        totalNtm: v.totalNtm,
+        totalOriginalNtm: v.totalOriginalNtm,
+      }))
+      .filter(d => d.lostARR > 0)
+      .sort((a, b) => b.lostARR - a.lostARR)
+      .slice(0, 5);
+
+    const lostARR_EU = buildLostARR(euRC);
+    const lostARR_Partner = buildLostARR(partnerRC);
+
+    return { recapture, totalRenewNTM, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcTopPartner, lostARR_EU, lostARR_Partner };
   }, [isMWR, filteredData]);
 
   // ═══════ Debug ═══════
@@ -921,121 +977,128 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
           </div>
         </div>
 
-        {/* ── 1. Trend (Full Width) ── */}
-        {chartVis.trend && !isMWR && (
-          <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-6 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-            <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <TrendUp weight="fill" className="text-brand-500 text-lg" /> Weekly Pipeline Trend
-            </h3>
-            <div className="relative w-full h-[250px]">
-              <Line data={trendChartData} options={trendOptions} />
-            </div>
-          </div>
-        )}
-
-        {/* ── 2–9 Charts Bento Grid ── */}
-        {!isMWR && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {/* 2. Type Doughnut */}
-          {chartVis.type && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> 需求類型占比 (Type)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Doughnut data={typeData} options={doughnutOptions} />
-              </div>
-            </div>
-          )}
-
-          {/* 3. Product Doughnut */}
-          {chartVis.product && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <ChartDonut weight="fill" className="text-teal-500 text-lg" /> {isAzureFiltered ? 'Azure 類型佔比 (Segment)' : '產品金額占比 (Cat.)'}
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Doughnut data={prodData} options={doughnutOptions} />
-              </div>
-            </div>
-          )}
-
-          {/* 4. Stage Waterfall */}
-          {chartVis.stage && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-1 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Funnel weight="fill" className="text-orange-500 text-lg" /> Waterfall (Stage)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Bar data={stageData} options={waterfallOpts} />
-              </div>
-            </div>
-          )}
-
-          {/* 5+7. Top 10 EU + Forecast Sales (side by side) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 col-span-full w-full">
-          {chartVis.eu && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 10 (EU)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Bar data={euData} options={hBarOpts()} />
-              </div>
-            </div>
-          )}
-          {chartVis.sales && canViewSalesRank && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <UsersThree weight="fill" className="text-blue-600 text-lg" /> Forecast (Sales)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Bar data={salesData} options={vBarOpts()} />
-              </div>
-            </div>
-          )}
-          </div>
-
-          {/* 6. Top 10 Partner (Horizontal Bar) */}
-          {chartVis.partner && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 10 (Partner)
-              </h3>
-              <div className="relative w-full h-[280px]">
-                <Bar data={partnerData} options={hBarOpts()} />
-              </div>
-            </div>
-          )}
-
-          {/* 8. PM (Vertical Bar → Full Width) */}
-          {chartVis.pm && canViewPmDist && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <UserCircleGear weight="fill" className="text-emerald-600 text-lg" /> 專案負責總額 (PM)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Bar data={pmData} options={vBarOpts()} />
-              </div>
-            </div>
-          )}
-
-          {/* 9. SKU Top 10 (Horizontal Bar → Full Width) */}
-          {chartVis.sku && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                  <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
+        {/* ── Standard Charts (D&D sortable) ── */}
+        {!isMWR && (() => {
+          const STD_FULL_WIDTH = new Set(['trend', 'partner', 'pm', 'sku']);
+          const STD_CHART_REGISTRY = {
+            trend: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <TrendUp weight="fill" className="text-brand-500 text-lg" /> Weekly Pipeline Trend
                 </h3>
-                <span className="text-[10px] text-slate-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
+                <div className="relative w-full h-[250px]">
+                  <Line data={trendChartData} options={trendOptions} />
+                </div>
               </div>
-              <div className="relative w-full h-[300px]">
-                <Bar data={skuData} options={skuBarOpts} />
+            ),
+            type: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> 需求類型占比 (Type)
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Doughnut data={typeData} options={doughnutOptions} />
+                </div>
               </div>
+            ),
+            product: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <ChartDonut weight="fill" className="text-teal-500 text-lg" /> {isAzureFiltered ? 'Azure 類型佔比 (Segment)' : '產品金額占比 (Cat.)'}
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Doughnut data={prodData} options={doughnutOptions} />
+                </div>
+              </div>
+            ),
+            stage: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <Funnel weight="fill" className="text-orange-500 text-lg" /> Waterfall (Stage)
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Bar data={stageData} options={waterfallOpts} />
+                </div>
+              </div>
+            ),
+            eu: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 10 (EU)
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Bar data={euData} options={hBarOpts()} />
+                </div>
+              </div>
+            ),
+            sales: canViewSalesRank ? (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <UsersThree weight="fill" className="text-blue-600 text-lg" /> Forecast (Sales)
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Bar data={salesData} options={vBarOpts()} />
+                </div>
+              </div>
+            ) : null,
+            partner: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 10 (Partner)
+                </h3>
+                <div className="relative w-full h-[280px]">
+                  <Bar data={partnerData} options={hBarOpts()} />
+                </div>
+              </div>
+            ),
+            pm: canViewPmDist ? (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <UserCircleGear weight="fill" className="text-emerald-600 text-lg" /> 專案負責總額 (PM)
+                </h3>
+                <div className="relative w-full h-[220px]">
+                  <Bar data={pmData} options={vBarOpts()} />
+                </div>
+              </div>
+            ) : null,
+            sku: (
+              <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
+                </div>
+                <div className="relative w-full h-[300px]">
+                  <Bar data={skuData} options={skuBarOpts} />
+                </div>
+              </div>
+            ),
+          };
+          const stdVisible = stdChartOrder.filter(id => chartVis[id] && STD_CHART_REGISTRY[id]);
+          return (
+            <div className="flex flex-wrap gap-5 w-full">
+              {stdVisible.map(id => (
+                <div
+                  key={id}
+                  draggable
+                  onDragStart={e => handleStdDragStart(e, id)}
+                  onDragEnter={e => handleStdDragEnter(e, id)}
+                  onDragEnd={handleStdDragEnd}
+                  onDragOver={e => e.preventDefault()}
+                  className={`relative group cursor-move transition-all duration-200 ${stdDraggingId === id ? 'opacity-40 scale-[0.97]' : ''} ${
+                    STD_FULL_WIDTH.has(id) ? 'w-full' : 'w-full md:w-[calc(50%-0.625rem)] xl:w-[calc(33.333%-0.84rem)] flex-grow'
+                  }`}
+                >
+                  <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing">
+                    <DotsSixVertical weight="bold" className="text-slate-400 text-lg" />
+                  </div>
+                  {STD_CHART_REGISTRY[id]}
+                </div>
+              ))}
             </div>
-          )}
-        </div>
-        )}
+          );
+        })()}
 
         {/* ═══════ MW-R Specialized View ═══════ */}
         {isMWR && mwrStats && (
@@ -1051,7 +1114,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
 // ═══════ MW-R Specialized Dashboard ═══════
 function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, makeBarData, hBarOpts, doughnutOptions, ntTooltip, getTopN }) {
-  const { recapture, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner } = mwrStats;
+  const { recapture, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcTopPartner, lostARR_EU, lostARR_Partner } = mwrStats;
 
   // Recapture Rate Chart data
   const rcLabels = recapture.length ? recapture.map(r => r.month) : ['無資料'];
@@ -1220,12 +1283,57 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
 
   const rcTopEUData = makeRcRankData(rcTopEU);
   rcTopEUData._rcRawData = rcTopEU;
-  const rcLowEUData = makeRcRankData(rcLowEU);
-  rcLowEUData._rcRawData = rcLowEU;
   const rcTopPartnerData = makeRcRankData(rcTopPartner);
   rcTopPartnerData._rcRawData = rcTopPartner;
-  const rcLowPartnerData = makeRcRankData(rcLowPartner);
-  rcLowPartnerData._rcRawData = rcLowPartner;
+
+  // Lost ARR chart data (absolute loss amount, red bars)
+  function makeLostARRData(arr) {
+    return {
+      labels: arr.length ? arr.map(d => d.name) : ['無資料'],
+      datasets: [{
+        label: 'Lost ARR',
+        data: arr.length ? arr.map(d => d.lostARR) : [0],
+        backgroundColor: '#ef4444',
+        borderWidth: 0, borderRadius: 4, barPercentage: 0.6,
+      }],
+    };
+  }
+  function lostARROpts(maxVal) {
+    return {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const idx = ctx.dataIndex;
+              const src = ctx.chart.data._lostRawData;
+              const d = src?.[idx];
+              if (!d) return `NT$ ${(ctx.raw || 0).toLocaleString()}`;
+              return [
+                `Lost ARR: NT$ ${d.lostARR.toLocaleString()}`,
+                `原 NTM: NT$ ${d.totalOriginalNtm.toLocaleString()}`,
+                `新 NTM: NT$ ${d.totalNtm.toLocaleString()}`,
+              ];
+            },
+          },
+        },
+        datalabels: {
+          display: true, anchor: 'end', align: 'right', offset: 4,
+          font: { size: 10, weight: 'bold' }, color: '#dc2626',
+          formatter: v => `${(v / 1000).toFixed(0)}K`,
+        },
+      },
+      scales: {
+        x: { grid: { color: '#f1f5f9' }, ticks: { callback: v => `${(v / 1000).toLocaleString()}K` }, suggestedMax: (maxVal || 1) * 1.3 },
+        y: { grid: { display: false } },
+      },
+    };
+  }
+  const lostPartnerData = makeLostARRData(lostARR_Partner);
+  lostPartnerData._lostRawData = lostARR_Partner;
+  const lostEUData = makeLostARRData(lostARR_EU);
+  lostEUData._lostRawData = lostARR_EU;
 
   // ── Partner ARR Comparison (Top 10, grouped stacked bar) ──
   const partnerARR = useMemo(() => {
@@ -1242,40 +1350,35 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
       rows = rows.filter(r => r.date && r.date >= monthStart && r.date <= monthEnd);
     }
 
-    // Group by Partner
+    // Group by Partner — Zero-Baseline Variance structure
     const partnerMap = {};
     rows.forEach(row => {
       const key = row.si || '未知';
-      if (!partnerMap[key]) partnerMap[key] = { totalNtm: 0, originalNtm: 0, expansion: 0, flat: 0, contraction: 0, churnOriginal: 0, origExpansion: 0, origFlat: 0, origContraction: 0, origChurn: 0 };
+      if (!partnerMap[key]) partnerMap[key] = { originalNtm: 0, flat: 0, contraction: 0, expansion: 0, churnOriginal: 0 };
       const p = partnerMap[key];
       const amt = row.amount || 0;
       const origNtm = row.originalNtm || 0;
       const type = row.reqType || '';
-      p.totalNtm += amt;
       p.originalNtm += origNtm;
-      if (type.includes('續約增購'))      { p.expansion += amt; p.origExpansion += origNtm; }
-      else if (type.includes('原案續約')) { p.flat += amt; p.origFlat += origNtm; }
-      else if (type.includes('降級購買')) { p.contraction += amt; p.origContraction += origNtm; }
-      else if (type.includes('未續約'))   { p.churnOriginal += origNtm; p.origChurn += origNtm; }
-      else                                { p.expansion += amt; p.origExpansion += origNtm; }
+      if (type.includes('續約增購'))      { p.expansion += amt; }
+      else if (type.includes('原案續約')) { p.flat += amt; }
+      else if (type.includes('降級購買')) { p.contraction += amt; }
+      else if (type.includes('未續約'))   { p.churnOriginal += origNtm; }
+      else                                { p.expansion += amt; }
     });
 
-    // Sort by totalNtm desc, take top 10
+    // Sort by originalNtm desc, take top 10
     const sorted = Object.entries(partnerMap)
-      .sort(([, a], [, b]) => b.totalNtm - a.totalNtm)
+      .sort(([, a], [, b]) => b.originalNtm - a.originalNtm)
       .slice(0, 10);
 
     return {
       labels: sorted.map(([k]) => k),
       originalNtm: sorted.map(([, v]) => v.originalNtm),
-      expansion: sorted.map(([, v]) => v.expansion),
       flat: sorted.map(([, v]) => v.flat),
       contraction: sorted.map(([, v]) => v.contraction),
-      churnOriginal: sorted.map(([, v]) => v.churnOriginal),
-      origExpansion: sorted.map(([, v]) => v.origExpansion),
-      origFlat: sorted.map(([, v]) => v.origFlat),
-      origContraction: sorted.map(([, v]) => v.origContraction),
-      origChurn: sorted.map(([, v]) => v.origChurn),
+      expansion: sorted.map(([, v]) => v.expansion),
+      churnNeg: sorted.map(([, v]) => -Math.abs(v.churnOriginal)),
       isEmpty: sorted.length === 0,
       isDefaultMonth: !dateStart && !dateEnd,
     };
@@ -1284,27 +1387,26 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
   const partnerARRData = {
     labels: partnerARR.isEmpty ? ['無資料'] : partnerARR.labels,
     datasets: partnerARR.isEmpty ? [{ label: '無資料', data: [0], backgroundColor: '#94a3b8' }] : [
-      // Stack 0: 原合約結構 (透明色)
-      { label: '續約增購 (原)', data: partnerARR.origExpansion, stack: 'Stack 0', backgroundColor: '#22c55e80', borderRadius: 3, barPercentage: 0.7 },
-      { label: '原案續約 (原)', data: partnerARR.origFlat, stack: 'Stack 0', backgroundColor: '#3b82f680', borderRadius: 3, barPercentage: 0.7 },
-      { label: '降級購買 (原)', data: partnerARR.origContraction, stack: 'Stack 0', backgroundColor: '#f59e0b80', borderRadius: 3, barPercentage: 0.7 },
-      { label: '未續約 (原)', data: partnerARR.origChurn, stack: 'Stack 0', backgroundColor: '#ef444480', borderRadius: 3, barPercentage: 0.7 },
-      // Stack 1: 新續約結構 (實色)
-      { label: '續約增購', data: partnerARR.expansion, stack: 'Stack 1', backgroundColor: '#22c55e', borderRadius: 3, barPercentage: 0.7 },
+      // Stack 0: 原 NTM 總額 (single neutral bar)
+      { label: '原 NTM 總額', data: partnerARR.originalNtm, stack: 'Stack 0', backgroundColor: '#cbd5e1', borderRadius: 3, barPercentage: 0.7 },
+      // Stack 1 positive: 留存與擴張
       { label: '原案續約', data: partnerARR.flat, stack: 'Stack 1', backgroundColor: '#3b82f6', borderRadius: 3, barPercentage: 0.7 },
       { label: '降級購買', data: partnerARR.contraction, stack: 'Stack 1', backgroundColor: '#f59e0b', borderRadius: 3, barPercentage: 0.7 },
-      { label: '未續約流失 (原額)', data: partnerARR.churnOriginal, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
+      { label: '續約增購', data: partnerARR.expansion, stack: 'Stack 1', backgroundColor: '#22c55e', borderRadius: 3, barPercentage: 0.7 },
+      // Stack 1 negative: 流失
+      { label: '未續約流失', data: partnerARR.churnNeg, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
     ],
   };
   // ARR shared tooltip: stack-aware percentage
   const arrTooltipLabel = c => {
     if (!c || !c.chart || !c.chart.data) return '';
-    const val = c.raw || 0;
+    const rawVal = c.raw || 0;
+    const val = Math.abs(rawVal);
     const ds = c.dataset;
     if (!ds || !ds.stack) return ` ${ds?.label || ''}: NT$ ${val.toLocaleString()}`;
     const stackTotal = c.chart.data.datasets
       .filter(d => d.stack === ds.stack)
-      .reduce((sum, d) => sum + (Number(d.data?.[c.dataIndex]) || 0), 0);
+      .reduce((sum, d) => sum + Math.abs(Number(d.data?.[c.dataIndex]) || 0), 0);
     const pct = stackTotal > 0 ? ((val / stackTotal) * 100).toFixed(1) : '0.0';
     return ` ${ds.label}: NT$ ${val.toLocaleString()} (${pct}%)`;
   };
@@ -1317,7 +1419,7 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
     const stackTotal = item.chart.data.datasets
       .filter(ds => ds.stack === stack)
       .reduce((sum, ds) => sum + (Number(ds.data?.[item.dataIndex]) || 0), 0);
-    const title = stack.includes('0') ? '原 NTM 總額' : '新 NTM 總額';
+    const title = stack.includes('0') ? '原 NTM 總額' : '新 NTM 淨額';
     return `${title}: NT$ ${stackTotal.toLocaleString()}`;
   };
 
@@ -1341,28 +1443,26 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
     renewalOnly.forEach(row => {
       const rawDate = row.date;
       const pod = (typeof rawDate === 'string' && rawDate.length >= 7 && rawDate !== '-') ? rawDate.substring(0, 7) : '未指定';
-      if (!monthMap[pod]) monthMap[pod] = { expansion: 0, flat: 0, contraction: 0, churnOriginal: 0, origExpansion: 0, origFlat: 0, origContraction: 0, origChurn: 0 };
+      if (!monthMap[pod]) monthMap[pod] = { originalNtm: 0, flat: 0, contraction: 0, expansion: 0, churnOriginal: 0 };
       const m = monthMap[pod];
       const amt = row.amount || 0;
       const origNtm = row.originalNtm || 0;
       const type = row.reqType || '';
-      if (type.includes('續約增購'))      { m.expansion += amt; m.origExpansion += origNtm; }
-      else if (type.includes('原案續約')) { m.flat += amt; m.origFlat += origNtm; }
-      else if (type.includes('降級購買')) { m.contraction += amt; m.origContraction += origNtm; }
-      else if (type.includes('未續約'))   { m.churnOriginal += origNtm; m.origChurn += origNtm; }
-      else                                { m.expansion += amt; m.origExpansion += origNtm; }
+      m.originalNtm += origNtm;
+      if (type.includes('續約增購'))      { m.expansion += amt; }
+      else if (type.includes('原案續約')) { m.flat += amt; }
+      else if (type.includes('降級購買')) { m.contraction += amt; }
+      else if (type.includes('未續約'))   { m.churnOriginal += origNtm; }
+      else                                { m.expansion += amt; }
     });
     const sorted = Object.entries(monthMap).filter(([k]) => k !== '未指定').sort(([a], [b]) => a.localeCompare(b));
     return {
       labels: sorted.map(([k]) => k),
-      expansion: sorted.map(([, v]) => v.expansion),
+      originalNtm: sorted.map(([, v]) => v.originalNtm),
       flat: sorted.map(([, v]) => v.flat),
       contraction: sorted.map(([, v]) => v.contraction),
-      churnOriginal: sorted.map(([, v]) => v.churnOriginal),
-      origExpansion: sorted.map(([, v]) => v.origExpansion),
-      origFlat: sorted.map(([, v]) => v.origFlat),
-      origContraction: sorted.map(([, v]) => v.origContraction),
-      origChurn: sorted.map(([, v]) => v.origChurn),
+      expansion: sorted.map(([, v]) => v.expansion),
+      churnNeg: sorted.map(([, v]) => -Math.abs(v.churnOriginal)),
       isEmpty: sorted.length === 0,
     };
   }, [filteredData]);
@@ -1370,22 +1470,59 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
   const monthlyARRData = {
     labels: monthlyARR.isEmpty ? ['無資料'] : monthlyARR.labels,
     datasets: monthlyARR.isEmpty ? [{ label: '無資料', data: [0], backgroundColor: '#94a3b8' }] : [
-      { label: '續約增購 (原)', data: monthlyARR.origExpansion, stack: 'Stack 0', backgroundColor: '#22c55e80', borderRadius: 3, barPercentage: 0.7 },
-      { label: '原案續約 (原)', data: monthlyARR.origFlat, stack: 'Stack 0', backgroundColor: '#3b82f680', borderRadius: 3, barPercentage: 0.7 },
-      { label: '降級購買 (原)', data: monthlyARR.origContraction, stack: 'Stack 0', backgroundColor: '#f59e0b80', borderRadius: 3, barPercentage: 0.7 },
-      { label: '未續約 (原)', data: monthlyARR.origChurn, stack: 'Stack 0', backgroundColor: '#ef444480', borderRadius: 3, barPercentage: 0.7 },
-      { label: '續約增購', data: monthlyARR.expansion, stack: 'Stack 1', backgroundColor: '#22c55e', borderRadius: 3, barPercentage: 0.7 },
+      { label: '原 NTM 總額', data: monthlyARR.originalNtm, stack: 'Stack 0', backgroundColor: '#cbd5e1', borderRadius: 3, barPercentage: 0.7 },
       { label: '原案續約', data: monthlyARR.flat, stack: 'Stack 1', backgroundColor: '#3b82f6', borderRadius: 3, barPercentage: 0.7 },
       { label: '降級購買', data: monthlyARR.contraction, stack: 'Stack 1', backgroundColor: '#f59e0b', borderRadius: 3, barPercentage: 0.7 },
-      { label: '未續約流失 (原額)', data: monthlyARR.churnOriginal, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
+      { label: '續約增購', data: monthlyARR.expansion, stack: 'Stack 1', backgroundColor: '#22c55e', borderRadius: 3, barPercentage: 0.7 },
+      { label: '未續約流失', data: monthlyARR.churnNeg, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
     ],
   };
 
-  return (
-    <>
-      {/* 1. Monthly Renewal Recapture Rate */}
-      {chartVis.recaptureRate && (
-      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-5">
+  // ── Drag & Drop chart ordering (persisted to localStorage) ──
+  const DEFAULT_CHART_ORDER = MWR_CHART_DEFS.map(c => c.id);
+  const [chartOrder, setChartOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('mwr_chart_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    } catch {}
+    return DEFAULT_CHART_ORDER;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('mwr_chart_order', JSON.stringify(chartOrder)); } catch {}
+  }, [chartOrder]);
+
+  const dragItem = useRef(null);
+  const dragOverItem = useRef(null);
+  const [draggingId, setDraggingId] = useState(null);
+
+  const handleDragStart = (e, id) => { dragItem.current = id; setDraggingId(id); e.dataTransfer.effectAllowed = 'move'; };
+  const handleDragEnter = (e, id) => { dragOverItem.current = id; };
+  const handleDragEnd = () => {
+    const fromId = dragItem.current;
+    const toId = dragOverItem.current;
+    if (fromId && toId && fromId !== toId) {
+      setChartOrder(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(fromId);
+        const toIdx = next.indexOf(toId);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, fromId);
+        return next;
+      });
+    }
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setDraggingId(null);
+  };
+
+  // Chart component registry — each entry renders its own card wrapper
+  const CHART_REGISTRY = {
+    recaptureRate: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
         <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <TrendUp weight="fill" className="text-indigo-500 text-lg" /> Monthly Renewal Recapture Rate
         </h3>
@@ -1394,136 +1531,111 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
           <Bar data={rcChartData} options={rcOpts} />
         </div>
       </div>
-      )}
-
-      {/* 2. Monthly ARR Renewal Comparison */}
-      {chartVis.mwrMonthlyARR && (
-      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-5">
+    ),
+    mwrMonthlyARR: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
         <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <TrendUp weight="fill" className="text-teal-500 text-lg" /> Monthly ARR Renewal Comparison
         </h3>
-        <p className="text-[10px] text-slate-400 mb-4">左柱 = 原合約結構 (透明)　右柱 = 新續約結構 (實色)　X軸 = POD 月份</p>
+        <p className="text-[10px] text-slate-400 mb-4">左柱 = 原 NTM 總額　右柱 = 續約結構 (正向留存 / 負向流失)　X軸 = POD 月份</p>
         <div className="relative w-full h-[340px]">
           <Bar data={monthlyARRData} options={partnerARROpts} />
         </div>
       </div>
-      )}
-
-      {/* 3. Type + Sales Stage (side by side) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Type Doughnut */}
-        {chartVis.mwrType && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> Type 占比
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Doughnut data={typeData} options={mwrDoughnutOpts} />
-          </div>
+    ),
+    mwrType: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> Type 占比
+        </h3>
+        <div className="relative w-full h-[220px]">
+          <Doughnut data={typeData} options={mwrDoughnutOpts} />
         </div>
-        )}
-
-        {/* Sales Stage Doughnut */}
-        {chartVis.mwrStage && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <ChartDonut weight="fill" className="text-teal-500 text-lg" /> Sales Stage 占比
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Doughnut data={ssData} options={mwrDoughnutOpts} />
-          </div>
-        </div>
-        )}
       </div>
-
-      {/* Pair A: Top 5 Partner + Recapture Top 5 Partner */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
-        {chartVis.mwrPartner && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 5 (Partner)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={partnerData} options={hBarOpts()} />
-          </div>
+    ),
+    mwrStage: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <ChartDonut weight="fill" className="text-teal-500 text-lg" /> Sales Stage 占比
+        </h3>
+        <div className="relative w-full h-[220px]">
+          <Doughnut data={ssData} options={mwrDoughnutOpts} />
         </div>
-        )}
-        {chartVis.rcTopPartner && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Handshake weight="fill" className="text-green-600 text-lg" /> Recapture Top 5 (Partner)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={rcTopPartnerData} options={rcRankOpts(Math.max(...(rcTopPartner.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
       </div>
-
-      {/* Pair C: Recapture Lowest 5 Partner + Recapture Lowest 5 EU */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
-        {chartVis.rcLowPartner && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Handshake weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (Partner)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={rcLowPartnerData} options={rcRankOpts(Math.max(...(rcLowPartner.map(d => d.rate)), 100))} />
-          </div>
+    ),
+    mwrPartner: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 5 NTM (Partner)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={partnerData} options={hBarOpts()} />
         </div>
-        )}
-        {chartVis.rcLowEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (EU)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={rcLowEUData} options={rcRankOpts(Math.max(...(rcLowEU.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
       </div>
-
-      {/* Pair B: Top 5 EU + Recapture Top 5 EU */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
-        {chartVis.mwrEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 (EU)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={euData} options={hBarOpts()} />
-          </div>
+    ),
+    rcTopPartner: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Handshake weight="fill" className="text-green-600 text-lg" /> Top 5 Recapture Rate (Partner)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={rcTopPartnerData} options={rcRankOpts(Math.max(...(rcTopPartner.map(d => d.rate)), 100))} />
         </div>
-        )}
-        {chartVis.rcTopEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-green-600 text-lg" /> Recapture Top 5 (EU)
-          </h3>
-          <div className="relative w-full h-[260px]">
-            <Bar data={rcTopEUData} options={rcRankOpts(Math.max(...(rcTopEU.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
       </div>
-
-      {/* ARR Renewal Comparison Top 10 (Partner) (full-width) */}
-      {chartVis.mwrPartnerARR && (
-      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mt-5">
+    ),
+    rcLowPartner: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Handshake weight="fill" className="text-red-500 text-lg" /> Top 5 Lost ARR (Partner)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={lostPartnerData} options={lostARROpts(Math.max(...(lostARR_Partner.map(d => d.lostARR)), 1))} />
+        </div>
+      </div>
+    ),
+    rcLowEU: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Buildings weight="fill" className="text-red-500 text-lg" /> Top 5 Lost ARR (EU)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={lostEUData} options={lostARROpts(Math.max(...(lostARR_EU.map(d => d.lostARR)), 1))} />
+        </div>
+      </div>
+    ),
+    mwrEU: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 NTM (EU)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={euData} options={hBarOpts()} />
+        </div>
+      </div>
+    ),
+    rcTopEU: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Buildings weight="fill" className="text-green-600 text-lg" /> Top 5 Recapture Rate (EU)
+        </h3>
+        <div className="relative w-full h-[260px]">
+          <Bar data={rcTopEUData} options={rcRankOpts(Math.max(...(rcTopEU.map(d => d.rate)), 100))} />
+        </div>
+      </div>
+    ),
+    mwrPartnerARR: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
         <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <Handshake weight="fill" className="text-indigo-500 text-lg" /> ARR Renewal Comparison Top 10 (Partner)
         </h3>
-        <p className="text-[10px] text-slate-400 mb-4">左柱 = 原合約結構 (透明)　右柱 = 今年續約結構 (實色){partnerARR.isDefaultMonth && <span className="ml-2 italic">※ 未選取預計下單日，本圖表預設顯示本月資料</span>}</p>
+        <p className="text-[10px] text-slate-400 mb-4">左柱 = 原 NTM 總額　右柱 = 續約結構 (正向留存 / 負向流失){partnerARR.isDefaultMonth && <span className="ml-2 italic">※ 未選取預計下單日，本圖表預設顯示本月資料</span>}</p>
         <div className="relative w-full h-[340px]">
           <Bar data={partnerARRData} options={partnerARROpts} />
         </div>
       </div>
-      )}
-
-      {/* Top 10 SKU (full-width, last) */}
-      {chartVis.mwrSKU && (
-      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mt-5">
+    ),
+    mwrSKU: (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
         <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
         </h3>
@@ -1531,8 +1643,36 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
           <Bar data={skuData} options={mwrSkuBarOpts} />
         </div>
       </div>
-      )}
-    </>
+    ),
+  };
+
+  // Filter visible charts and render via drag-sortable array
+  const visibleOrder = chartOrder.filter(id => chartVis[id] && CHART_REGISTRY[id]);
+
+  const MWR_FULL_WIDTH = new Set(['recaptureRate', 'mwrMonthlyARR', 'mwrPartnerARR', 'mwrSKU']);
+
+  return (
+    <div className="flex flex-wrap gap-5 w-full">
+      {visibleOrder.map((id) => (
+        <div
+          key={id}
+          draggable
+          onDragStart={e => handleDragStart(e, id)}
+          onDragEnter={e => handleDragEnter(e, id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={e => e.preventDefault()}
+          className={`relative group cursor-move transition-all duration-200 ${draggingId === id ? 'opacity-40 scale-[0.97]' : ''} ${
+            MWR_FULL_WIDTH.has(id) ? 'w-full' : 'w-full lg:w-[calc(50%-0.625rem)] flex-grow'
+          }`}
+        >
+          {/* Drag handle */}
+          <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing">
+            <DotsSixVertical weight="bold" className="text-slate-400 text-lg" />
+          </div>
+          {CHART_REGISTRY[id]}
+        </div>
+      ))}
+    </div>
   );
 }
 

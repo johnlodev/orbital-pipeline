@@ -81,6 +81,9 @@ const RENEW_EXTRA_COLUMNS = [
 const INITIAL_COLUMNS = SHARED_COLUMNS;
 
 const DEFAULT_VISIBLE = Object.fromEntries(SHARED_COLUMNS.map(c => [c.id, true]));
+const DEFAULT_RENEW_VISIBLE = Object.fromEntries(
+  [...SHARED_COLUMNS, ...RENEW_EXTRA_COLUMNS].map(c => [c.id, true])
+);
 const INITIAL_TABS = [
   { id: 'tab_all', name: '全部', removable: false },
   { id: 'tab_new', name: '新購', removable: true },
@@ -386,7 +389,33 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
   // --- Core UI state ---
   const [activeTab, setActiveTab] = useState('全部');
   const [searchTerm, setSearchTerm] = useState('');
-  const [visibleCols, setVisibleCols] = useState(DEFAULT_VISIBLE);
+  const colsStorageKey = `pipeline_cols_${viewMode}`;
+  const defaultColsForView = isRenew ? DEFAULT_RENEW_VISIBLE : DEFAULT_VISIBLE;
+  const [visibleCols, setVisibleCols] = useState(() => {
+    try {
+      const saved = localStorage.getItem(colsStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) return parsed;
+      }
+    } catch {}
+    return defaultColsForView;
+  });
+  // Persist column visibility on change
+  useEffect(() => {
+    try { localStorage.setItem(colsStorageKey, JSON.stringify(visibleCols)); } catch {}
+  }, [visibleCols, colsStorageKey]);
+  // Sync from localStorage when viewMode changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(colsStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) { setVisibleCols(parsed); return; }
+      }
+    } catch {}
+    setVisibleCols(defaultColsForView);
+  }, [colsStorageKey]);
   const [showFilter, setShowFilter] = useState(false);
   const [showColMenu, setShowColMenu] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
