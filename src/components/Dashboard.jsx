@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { motion, useSpring, useTransform } from 'framer-motion';
 import { USD_EXCHANGE_RATE } from '../utils/constants';
 import {
@@ -115,25 +115,26 @@ const CHART_DEFS = [
   { id: 'trend',   label: 'Weekly Pipeline Trend' },
   { id: 'type',    label: '需求類型占比 (Type)' },
   { id: 'product', label: '產品金額占比 (Cat.)' },
-  { id: 'stage',   label: '階段金額占比 (Stage)' },
-  { id: 'eu',      label: 'Top 5 (EU)' },
-  { id: 'partner', label: 'Top 5 (Partner)' },
+  { id: 'stage',   label: 'Waterfall (Stage)' },
+  { id: 'eu',      label: 'Top 10 (EU)' },
+  { id: 'partner', label: 'Top 10 (Partner)' },
   { id: 'sales',   label: 'Forecast (Sales)' },
   { id: 'pm',      label: '專案負責總額 (PM)' },
   { id: 'sku',     label: 'Top 10 (SKU)' },
 ];
 const MWR_CHART_DEFS = [
-  { id: 'recaptureRate', label: 'Recapture Rate' },
+  { id: 'recaptureRate', label: 'Monthly Renewal Recapture Rate' },
+  { id: 'mwrMonthlyARR', label: 'Monthly ARR Renewal Comparison' },
   { id: 'mwrType',      label: 'Type 佔比' },
   { id: 'mwrStage',     label: 'Sales Stage 佔比' },
-  { id: 'mwrEU',        label: 'Top 5 EU' },
   { id: 'mwrPartner',   label: 'Top 5 Partner' },
-  { id: 'mwrSKU',       label: 'Top 10 SKU' },
-  { id: 'rcTopEU',      label: 'Recapture Top 5 EU' },
-  { id: 'rcLowEU',      label: 'Recapture Lowest 5 EU' },
   { id: 'rcTopPartner', label: 'Recapture Top 5 Partner' },
   { id: 'rcLowPartner', label: 'Recapture Lowest 5 Partner' },
-  { id: 'mwrPartnerARR', label: 'Top 10 Partner ARR 對比' },
+  { id: 'rcLowEU',      label: 'Recapture Lowest 5 EU' },
+  { id: 'mwrEU',        label: 'Top 5 EU' },
+  { id: 'rcTopEU',      label: 'Recapture Top 5 EU' },
+  { id: 'mwrPartnerARR', label: 'ARR Renewal Comparison Top 10 (Partner)' },
+  { id: 'mwrSKU',       label: 'Top 10 SKU' },
 ];
 
 // ── helpers ──
@@ -157,6 +158,43 @@ function getTopN(obj, n = 5) {
 }
 
 const ntTooltip = { callbacks: { label: (c) => ` NT$ ${c.raw.toLocaleString()}` } };
+
+// ── Pareto (80/20) helpers ──
+function makeParetoData(labels, values, barColor, extraBarProps = {}) {
+  const total = values.reduce((a, b) => a + b, 0);
+  let cumSum = 0;
+  const cumPct = values.map(v => { cumSum += v; return total > 0 ? +(cumSum / total * 100).toFixed(1) : 0; });
+  if (!labels.length) return { labels: ['無資料'], datasets: [{ data: [0], backgroundColor: barColor }] };
+  return {
+    labels,
+    datasets: [
+      { type: 'bar', label: '金額 (NTM)', data: values, backgroundColor: barColor, borderRadius: 4, barPercentage: 0.6, yAxisID: 'y', order: 2, ...extraBarProps },
+      { type: 'line', label: '累計佔比', data: cumPct, borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#f97316', tension: 0.3, yAxisID: 'y1', order: 1 },
+      { type: 'line', label: '80%', data: labels.map(() => 80), borderColor: '#ef444460', borderDash: [6, 3], borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1', order: 0 },
+    ],
+  };
+}
+
+function paretoOpts(customTooltip) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    layout: { padding: { top: 30 } },
+    plugins: {
+      legend: { display: true, position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 10 }, filter: item => item.text !== '80%' } },
+      tooltip: { callbacks: { label: customTooltip || (ctx => {
+        if (ctx.dataset.label === '80%') return null;
+        if (ctx.dataset.yAxisID === 'y1') return ` 累計佔比: ${Number(ctx.raw).toFixed(1)}%`;
+        return ` NT$ ${(ctx.raw || 0).toLocaleString()}`;
+      }) } },
+      datalabels: { display: false },
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45, minRotation: 45, autoSkip: false } },
+      y: { grid: { color: '#f1f5f9' }, beginAtZero: true, grace: '15%', position: 'left' },
+      y1: { grid: { display: false }, beginAtZero: true, max: 100, position: 'right', ticks: { callback: v => v + '%' } },
+    },
+  };
+}
 
 export default function Dashboard({ data, dictionary, currentUserPermissions }) {
   const rawDict = dictionary || defaultDictData;
@@ -198,6 +236,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const [filterMonths, setFilterMonths] = useState([]);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
+  const [excludePartners, setExcludePartners] = useState([]);
 
   // Close chart menu on outside click
   useEffect(() => {
@@ -250,6 +289,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     setFilterMonths([]);
     setExpStart('');
     setExpEnd('');
+    setExcludePartners([]);
   }
 
   function getDictLabel(dictKey, code) {
@@ -291,8 +331,10 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     // MW-R EXP date range
     if (expStart) result = result.filter(r => r.expDate && r.expDate >= expStart);
     if (expEnd)   result = result.filter(r => r.expDate && r.expDate <= expEnd);
+    // Exclude specific Partners (巨鯨排除)
+    if (excludePartners.length) result = result.filter(r => !(r.si && excludePartners.includes(r.si)));
     return result;
-  }, [data, searchTerm, dateStart, dateEnd, filterTypes, filterProducts, filterStages, filterSales, filterPMs, filterSegments, filterSalesStages, filterQuarters, filterMonths, expStart, expEnd]);
+  }, [data, searchTerm, dateStart, dateEnd, filterTypes, filterProducts, filterStages, filterSales, filterPMs, filterSegments, filterSalesStages, filterQuarters, filterMonths, expStart, expEnd, excludePartners]);
 
   // MW-R mode detection (case-insensitive for safety)
   const isMWR = filterProducts.some(p => p.toLowerCase() === 'mw-r');
@@ -306,7 +348,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     let totalNTM = 0, totalQty = 0;
     const typeStats = {}, prodStats = {}, stageStats = {}, segmentStats = {};
     const salesStats = {}, pmStats = {};
-    const euStats = {}, partnerStats = {}, skuStats = {};
+    const euStats = {}, partnerStats = {}, skuStats = {}, skuQtyStats = {};
     const trendStats = {};
     const trendByStage = {};
 
@@ -333,6 +375,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       euStats[row.enduser || '未知客戶']     = (euStats[row.enduser || '未知客戶']   || 0) + amt;
       partnerStats[row.si || '未知代理商']     = (partnerStats[row.si || '未知代理商']   || 0) + amt;
       skuStats[row.sku || '未指定 SKU']        = (skuStats[row.sku || '未指定 SKU']      || 0) + amt;
+      skuQtyStats[row.sku || '未指定 SKU']     = (skuQtyStats[row.sku || '未指定 SKU']   || 0) + qty;
 
       const wk = getWeekStart(row.date);
       if (wk) trendStats[wk] = (trendStats[wk] || 0) + amt;
@@ -348,7 +391,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     const totalDeals = kpiData.length;
     const avgDeal = totalDeals > 0 ? Math.round(totalNTM / totalDeals) : 0;
 
-    return { totalNTM, totalDeals, totalQty, avgDeal, typeStats, prodStats, stageStats, segmentStats, salesStats, pmStats, euStats, partnerStats, skuStats, trendStats, trendByStage };
+    return { totalNTM, totalDeals, totalQty, avgDeal, typeStats, prodStats, stageStats, segmentStats, salesStats, pmStats, euStats, partnerStats, skuStats, skuQtyStats, trendStats, trendByStage };
   }, [filteredData, dictData, isMWR]);
 
   // ── Shared chart option factories ──
@@ -458,57 +501,68 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     datasets: [{ label: '營收佔比', data: chartProdLabels.length ? chartProdValues : [0], backgroundColor: ['#14b8a6', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#f97316', '#22c55e'], borderWidth: 2, borderColor: '#fff' }],
   };
 
-  // 4. Stage Funnel (simulated with centered horizontal bar)
-  const funnelStageOrder = ['L1', 'L2', 'L3', 'L4'];
-  const orderedStages = [...funnelStageOrder.filter(s => stats.stageStats[getDictLabel('stage', s)] != null || stats.stageStats[s] != null)];
-  // Also include any stages not in the predefined order
+  // 4. Stage Waterfall Chart
+  const waterfallStageOrder = ['L1', 'L2', 'L3', 'L4'];
+  const wfOrderedStages = [...waterfallStageOrder.filter(s => stats.stageStats[getDictLabel('stage', s)] != null || stats.stageStats[s] != null)];
   Object.keys(stats.stageStats).forEach(s => {
-    if (!orderedStages.includes(s)) orderedStages.push(s);
+    if (!wfOrderedStages.includes(s)) wfOrderedStages.push(s);
   });
-  const funnelLabels = orderedStages;
-  const funnelValues = orderedStages.map(s => stats.stageStats[s] || 0);
-  const funnelMax = Math.max(...funnelValues, 1);
-  const funnelColors = orderedStages.map(s => {
+  const wfLabels = [...wfOrderedStages, '合計'];
+  const wfValues = wfOrderedStages.map(s => stats.stageStats[s] || 0);
+  const wfTotal = wfValues.reduce((a, b) => a + b, 0);
+  // Build floating bar data: each bar [start, end], total bar sits at [0, total]
+  let wfRunning = 0;
+  const wfBars = wfValues.map(v => { const s = wfRunning; wfRunning += v; return [s, wfRunning]; });
+  wfBars.push([0, wfTotal]); // total bar
+  const wfColors = wfOrderedStages.map(s => {
     const code = Object.keys(STAGE_COLORS).find(k => s.toUpperCase().includes(k.toUpperCase()));
     return code ? STAGE_COLORS[code] : '#f97316';
   });
+  wfColors.push('#0ea5e9'); // total bar color
   const stageData = {
-    labels: funnelLabels.length ? funnelLabels : ['無資料'],
+    labels: wfLabels.length > 1 ? wfLabels : ['無資料'],
     datasets: [{
       label: '預估金額 (NTM)',
-      data: funnelLabels.length ? funnelValues : [0],
-      backgroundColor: funnelLabels.length ? funnelColors : ['#f97316'],
+      data: wfLabels.length > 1 ? wfBars : [[0, 0]],
+      backgroundColor: wfLabels.length > 1 ? wfColors : ['#f97316'],
       borderWidth: 0,
-      borderRadius: 6,
-      maxBarThickness: 40,
-      barPercentage: 0.7,
+      borderRadius: 4,
+      barPercentage: 0.65,
       borderSkipped: false,
     }],
   };
-  const funnelOpts = {
-    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+  const waterfallOpts = {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'x',
+    layout: { padding: { top: 30 } },
     plugins: {
       legend: { display: false },
-      tooltip: ntTooltip,
+      tooltip: { callbacks: { label: ctx => {
+        const pair = ctx.raw;
+        const val = Array.isArray(pair) ? pair[1] - pair[0] : pair;
+        return ` NT$ ${val.toLocaleString()}`;
+      } } },
       datalabels: {
-        display: true, anchor: 'end', align: 'right', offset: 8,
+        display: true, anchor: 'end', align: 'top', offset: 2,
         color: '#334155',
-        font: { weight: 'bold', size: 11 },
-        formatter: v => v > 0 ? `NT$ ${v.toLocaleString()}` : '',
+        font: { weight: 'bold', size: 10 },
+        formatter: (v) => {
+          const val = Array.isArray(v) ? v[1] - v[0] : v;
+          return val > 0 ? `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}K` : '';
+        },
       },
     },
     scales: {
-      x: { display: false, max: funnelMax * 1.4 },
-      y: { grid: { display: false }, ticks: { padding: 10, autoSkip: false, font: { weight: 'bold', size: 12 } } },
+      x: { grid: { display: false }, ticks: { font: { weight: 'bold', size: 11 } } },
+      y: { grid: { color: '#f1f5f9' }, beginAtZero: true, grace: '15%', ticks: { callback: v => `${(v / 1000000).toFixed(0)}M` } },
     },
   };
 
   // 5. EU Top 5 (Horizontal Bar)
-  const topEU = getTopN(stats.euStats, 5);
+  const topEU = getTopN(stats.euStats, 10);
   const euData = makeBarData(Object.keys(topEU), Object.values(topEU), '#3b82f6');
 
-  // 6. Partner Top 5 (Horizontal Bar)
-  const topPartner = getTopN(stats.partnerStats, 5);
+  // 6. Partner Top 10 (Horizontal Bar)
+  const topPartner = getTopN(stats.partnerStats, 10);
   const partnerData = makeBarData(Object.keys(topPartner), Object.values(topPartner), '#6366f1');
 
   // 7. Sales (Vertical Bar)
@@ -519,9 +573,33 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const sortedPMKeys = Object.keys(stats.pmStats).sort((a, b) => stats.pmStats[b] - stats.pmStats[a]);
   const pmData = makeBarData(sortedPMKeys, sortedPMKeys.map(p => stats.pmStats[p]), '#059669');
 
-  // 9. SKU Top 10 (Horizontal Bar)
+  // 9. SKU Top 10 (Horizontal Bar with QTY tooltip)
   const topSKU = getTopN(stats.skuStats, 10);
-  const skuData = makeBarData(Object.keys(topSKU), Object.values(topSKU), '#ec4899');
+  const topSKUKeys = Object.keys(topSKU);
+  const skuData = {
+    labels: topSKUKeys.length ? topSKUKeys : ['無資料'],
+    datasets: [{
+      data: topSKUKeys.length ? Object.values(topSKU) : [0],
+      backgroundColor: '#ec4899',
+      borderRadius: 4, barPercentage: 0.6,
+      customQty: topSKUKeys.map(k => stats.skuQtyStats[k] || 0),
+    }],
+  };
+  const skuBarOpts = {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => {
+        const qty = ctx.dataset.customQty?.[ctx.dataIndex] || 0;
+        return ` NT$ ${(ctx.raw || 0).toLocaleString()} (數量: ${qty.toLocaleString()})`;
+      } } },
+      datalabels: { display: false },
+    },
+    scales: {
+      x: { grid: { display: true, color: '#f3f2f1' }, beginAtZero: true },
+      y: { grid: { display: false } },
+    },
+  };
 
   const hasActiveFilters = searchTerm || dateStart || dateEnd || filterTypes.length || filterProducts.length || filterStages.length || filterSales.length || filterPMs.length || filterSegments.length || filterSalesStages.length || filterQuarters.length || filterMonths.length || expStart || expEnd;
 
@@ -532,7 +610,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     // Pre-filter: only rows with renewal-type reqType for data purity
     const renewalRows = filteredData.filter(row => RENEW_TYPES.includes(row.reqType || ''));
     const monthBuckets = {}; // month -> { totalNtm, totalOriginalNtm }
-    const mwrEU = {}, mwrPartner = {}, mwrSKU = {}, mwrType = {}, mwrSalesStage = {};
+    const mwrEU = {}, mwrPartner = {}, mwrSKU = {}, mwrSKUQty = {}, mwrType = {}, mwrSalesStage = {};
     // EU/Partner level recapture accumulators
     const euRC = {}, partnerRC = {};
     let totalRenewNTM = 0;
@@ -559,6 +637,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       mwrEU[euKey] = (mwrEU[euKey] || 0) + amt;
       mwrPartner[partnerKey] = (mwrPartner[partnerKey] || 0) + amt;
       mwrSKU[row.sku || '未指定'] = (mwrSKU[row.sku || '未指定'] || 0) + amt;
+      mwrSKUQty[row.sku || '未指定'] = (mwrSKUQty[row.sku || '未指定'] || 0) + (row.quantity || 0);
 
       // EU/Partner recapture accumulators
       if (!euRC[euKey]) euRC[euKey] = { totalNtm: 0, totalOriginalNtm: 0 };
@@ -599,7 +678,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     const rcTopPartner = sortedPartnerRank.slice(0, 5);
     const rcLowPartner = sortedPartnerRank.slice().reverse().slice(0, 5);
 
-    return { recapture, totalRenewNTM, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner };
+    return { recapture, totalRenewNTM, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner };
   }, [isMWR, filteredData]);
 
   // ═══════ Debug ═══════
@@ -700,15 +779,31 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
                 <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex justify-between">Stage <span className="text-[9px] font-normal text-gray-400">未勾選=全選</span></label>
                 <DashFilterGroup items={dictData.stage} checked={filterStages} onToggle={v => toggle(v, setFilterStages)} />
               </div>
-              {/* Sales */}
+              {/* Sales — SearchableMultiSelect */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex justify-between">Sales <span className="text-[9px] font-normal text-gray-400">未勾選=全選</span></label>
-                <DashFilterGroup items={dictData.sales} checked={filterSales} onToggle={v => toggle(v, setFilterSales)} />
+                <SearchableMultiSelect
+                  items={(dictData.sales || []).map(s => ({ code: s.code, label: s.label }))}
+                  selected={filterSales}
+                  onToggle={v => toggle(v, setFilterSales)}
+                  placeholder="搜尋 Sales..."
+                />
               </div>
               {/* PM */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex justify-between">PM <span className="text-[9px] font-normal text-gray-400">未勾選=全選</span></label>
                 <DashFilterGroup items={dictData.pm} checked={filterPMs} onToggle={v => toggle(v, setFilterPMs)} />
+              </div>
+              {/* Exclude Partners */}
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex justify-between">排除 Partner <span className="text-[9px] font-normal text-red-400">已勾選將被剔除</span></label>
+                <SearchableMultiSelect
+                  items={[...new Set(data.map(r => r.si).filter(Boolean))].sort().map(s => ({ code: s, label: s }))}
+                  selected={excludePartners}
+                  onToggle={v => toggle(v, setExcludePartners)}
+                  placeholder="搜尋 Partner..."
+                  excludeMode
+                />
               </div>
               {/* Reset */}
               <div className="flex items-end justify-start lg:justify-end">
@@ -768,7 +863,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
             {isMWR && (
               <div className="mt-4 pt-4 border-t border-slate-200/60">
                 <div className="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" /> MW-R 續約進階篩選
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" /> AIBS Renew 進階篩選
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* EXP Date Range */}
@@ -865,43 +960,30 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
             </div>
           )}
 
-          {/* 4. Stage Funnel (Simulated) */}
+          {/* 4. Stage Waterfall */}
           {chartVis.stage && (
             <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-1 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
               <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Funnel weight="fill" className="text-orange-500 text-lg" /> 階段漏斗圖 (Stage Funnel)
+                <Funnel weight="fill" className="text-orange-500 text-lg" /> Waterfall (Stage)
               </h3>
               <div className="relative w-full h-[220px]">
-                <Bar data={stageData} options={funnelOpts} />
+                <Bar data={stageData} options={waterfallOpts} />
               </div>
             </div>
           )}
 
-          {/* 5. Top 5 EU (Horizontal Bar) */}
+          {/* 5+7. Top 10 EU + Forecast Sales (side by side) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 col-span-full w-full">
           {chartVis.eu && (
             <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
               <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 (EU)
+                <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 10 (EU)
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={euData} options={hBarOpts()} />
               </div>
             </div>
           )}
-
-          {/* 6. Top 5 Partner (Horizontal Bar) */}
-          {chartVis.partner && (
-            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 5 (Partner)
-              </h3>
-              <div className="relative w-full h-[220px]">
-                <Bar data={partnerData} options={hBarOpts()} />
-              </div>
-            </div>
-          )}
-
-          {/* 7. Sales (Vertical Bar) */}
           {chartVis.sales && canViewSalesRank && (
             <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
               <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
@@ -909,6 +991,19 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
               </h3>
               <div className="relative w-full h-[220px]">
                 <Bar data={salesData} options={vBarOpts()} />
+              </div>
+            </div>
+          )}
+          </div>
+
+          {/* 6. Top 10 Partner (Horizontal Bar) */}
+          {chartVis.partner && (
+            <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-3 transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
+              <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 10 (Partner)
+              </h3>
+              <div className="relative w-full h-[280px]">
+                <Bar data={partnerData} options={hBarOpts()} />
               </div>
             </div>
           )}
@@ -935,7 +1030,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
                 <span className="text-[10px] text-slate-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
               </div>
               <div className="relative w-full h-[300px]">
-                <Bar data={skuData} options={hBarOpts()} />
+                <Bar data={skuData} options={skuBarOpts} />
               </div>
             </div>
           )}
@@ -956,7 +1051,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 
 // ═══════ MW-R Specialized Dashboard ═══════
 function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, makeBarData, hBarOpts, doughnutOptions, ntTooltip, getTopN }) {
-  const { recapture, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner } = mwrStats;
+  const { recapture, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcLowEU, rcTopPartner, rcLowPartner } = mwrStats;
 
   // Recapture Rate Chart data
   const rcLabels = recapture.length ? recapture.map(r => r.month) : ['無資料'];
@@ -1021,7 +1116,31 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
   const topSKU = getTopN(mwrSKU, 10);
   const euData = makeBarData(Object.keys(topEU), Object.values(topEU), '#3b82f6');
   const partnerData = makeBarData(Object.keys(topPartner), Object.values(topPartner), '#6366f1');
-  const skuData = makeBarData(Object.keys(topSKU), Object.values(topSKU), '#ec4899');
+  const topSKUKeys = Object.keys(topSKU);
+  const skuData = {
+    labels: topSKUKeys.length ? topSKUKeys : ['無資料'],
+    datasets: [{
+      data: topSKUKeys.length ? Object.values(topSKU) : [0],
+      backgroundColor: '#ec4899',
+      borderRadius: 4, barPercentage: 0.6,
+      customQty: topSKUKeys.map(k => (mwrSKUQty || {})[k] || 0),
+    }],
+  };
+  const mwrSkuBarOpts = {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => {
+        const qty = ctx.dataset.customQty?.[ctx.dataIndex] || 0;
+        return ` NT$ ${(ctx.raw || 0).toLocaleString()} (數量: ${qty.toLocaleString()})`;
+      } } },
+      datalabels: { display: false },
+    },
+    scales: {
+      x: { grid: { display: true, color: '#f3f2f1' }, beginAtZero: true },
+      y: { grid: { display: false } },
+    },
+  };
 
   const TYPE_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#94a3b8'];
   const typeLabels = Object.keys(mwrType);
@@ -1177,26 +1296,98 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
       { label: '未續約流失 (原額)', data: partnerARR.churnOriginal, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
     ],
   };
+  // ARR shared tooltip: stack-aware percentage
+  const arrTooltipLabel = c => {
+    if (!c || !c.chart || !c.chart.data) return '';
+    const val = c.raw || 0;
+    const ds = c.dataset;
+    if (!ds || !ds.stack) return ` ${ds?.label || ''}: NT$ ${val.toLocaleString()}`;
+    const stackTotal = c.chart.data.datasets
+      .filter(d => d.stack === ds.stack)
+      .reduce((sum, d) => sum + (Number(d.data?.[c.dataIndex]) || 0), 0);
+    const pct = stackTotal > 0 ? ((val / stackTotal) * 100).toFixed(1) : '0.0';
+    return ` ${ds.label}: NT$ ${val.toLocaleString()} (${pct}%)`;
+  };
+
+  const arrTooltipFooter = tooltipItems => {
+    if (!tooltipItems.length) return '';
+    const item = tooltipItems[0];
+    const stack = item.dataset?.stack;
+    if (!stack) return '';
+    const stackTotal = item.chart.data.datasets
+      .filter(ds => ds.stack === stack)
+      .reduce((sum, ds) => sum + (Number(ds.data?.[item.dataIndex]) || 0), 0);
+    const title = stack.includes('0') ? '原 NTM 總額' : '新 NTM 總額';
+    return `${title}: NT$ ${stackTotal.toLocaleString()}`;
+  };
+
   const partnerARROpts = {
     responsive: true, maintainAspectRatio: false,
     plugins: {
       legend: { display: true, position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 10 } } },
-      tooltip: { callbacks: { label: c => ` ${c.dataset.label}: NT$ ${(c.raw || 0).toLocaleString()}` } },
+      tooltip: { callbacks: { label: arrTooltipLabel, footer: arrTooltipFooter } },
       datalabels: { display: false },
     },
     scales: {
-      x: { stacked: true, grid: { display: false } },
+      x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, minRotation: 0, font: { size: 9 } } },
       y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { callback: v => `${(v / 1000).toLocaleString()}K` } },
     },
   };
 
+  // ── Monthly ARR Dual-Stack (grouped by POD month) ──
+  const monthlyARR = useMemo(() => {
+    const renewalOnly = filteredData.filter(r => RENEW_TYPES.includes(r.reqType || ''));
+    const monthMap = {};
+    renewalOnly.forEach(row => {
+      const rawDate = row.date;
+      const pod = (typeof rawDate === 'string' && rawDate.length >= 7 && rawDate !== '-') ? rawDate.substring(0, 7) : '未指定';
+      if (!monthMap[pod]) monthMap[pod] = { expansion: 0, flat: 0, contraction: 0, churnOriginal: 0, origExpansion: 0, origFlat: 0, origContraction: 0, origChurn: 0 };
+      const m = monthMap[pod];
+      const amt = row.amount || 0;
+      const origNtm = row.originalNtm || 0;
+      const type = row.reqType || '';
+      if (type.includes('續約增購'))      { m.expansion += amt; m.origExpansion += origNtm; }
+      else if (type.includes('原案續約')) { m.flat += amt; m.origFlat += origNtm; }
+      else if (type.includes('降級購買')) { m.contraction += amt; m.origContraction += origNtm; }
+      else if (type.includes('未續約'))   { m.churnOriginal += origNtm; m.origChurn += origNtm; }
+      else                                { m.expansion += amt; m.origExpansion += origNtm; }
+    });
+    const sorted = Object.entries(monthMap).filter(([k]) => k !== '未指定').sort(([a], [b]) => a.localeCompare(b));
+    return {
+      labels: sorted.map(([k]) => k),
+      expansion: sorted.map(([, v]) => v.expansion),
+      flat: sorted.map(([, v]) => v.flat),
+      contraction: sorted.map(([, v]) => v.contraction),
+      churnOriginal: sorted.map(([, v]) => v.churnOriginal),
+      origExpansion: sorted.map(([, v]) => v.origExpansion),
+      origFlat: sorted.map(([, v]) => v.origFlat),
+      origContraction: sorted.map(([, v]) => v.origContraction),
+      origChurn: sorted.map(([, v]) => v.origChurn),
+      isEmpty: sorted.length === 0,
+    };
+  }, [filteredData]);
+
+  const monthlyARRData = {
+    labels: monthlyARR.isEmpty ? ['無資料'] : monthlyARR.labels,
+    datasets: monthlyARR.isEmpty ? [{ label: '無資料', data: [0], backgroundColor: '#94a3b8' }] : [
+      { label: '續約增購 (原)', data: monthlyARR.origExpansion, stack: 'Stack 0', backgroundColor: '#22c55e80', borderRadius: 3, barPercentage: 0.7 },
+      { label: '原案續約 (原)', data: monthlyARR.origFlat, stack: 'Stack 0', backgroundColor: '#3b82f680', borderRadius: 3, barPercentage: 0.7 },
+      { label: '降級購買 (原)', data: monthlyARR.origContraction, stack: 'Stack 0', backgroundColor: '#f59e0b80', borderRadius: 3, barPercentage: 0.7 },
+      { label: '未續約 (原)', data: monthlyARR.origChurn, stack: 'Stack 0', backgroundColor: '#ef444480', borderRadius: 3, barPercentage: 0.7 },
+      { label: '續約增購', data: monthlyARR.expansion, stack: 'Stack 1', backgroundColor: '#22c55e', borderRadius: 3, barPercentage: 0.7 },
+      { label: '原案續約', data: monthlyARR.flat, stack: 'Stack 1', backgroundColor: '#3b82f6', borderRadius: 3, barPercentage: 0.7 },
+      { label: '降級購買', data: monthlyARR.contraction, stack: 'Stack 1', backgroundColor: '#f59e0b', borderRadius: 3, barPercentage: 0.7 },
+      { label: '未續約流失 (原額)', data: monthlyARR.churnOriginal, stack: 'Stack 1', backgroundColor: '#ef4444', borderRadius: 3, barPercentage: 0.7 },
+    ],
+  };
+
   return (
     <>
-      {/* Recapture Rate Chart */}
+      {/* 1. Monthly Renewal Recapture Rate */}
       {chartVis.recaptureRate && (
-      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-6">
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-5">
         <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-          <TrendUp weight="fill" className="text-indigo-500 text-lg" /> Recapture Rate (月別續約回收率)
+          <TrendUp weight="fill" className="text-indigo-500 text-lg" /> Monthly Renewal Recapture Rate
         </h3>
         <p className="text-[10px] text-slate-400 mb-4">= 新 NTM / 原 NTM × 100%　<span className="text-green-600">■</span> ≥100%　<span className="text-red-500">■</span> &lt;100%</p>
         <div className="relative w-full h-[280px]">
@@ -1205,13 +1396,26 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
       </div>
       )}
 
-      {/* Supplementary Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      {/* 2. Monthly ARR Renewal Comparison */}
+      {chartVis.mwrMonthlyARR && (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mb-5">
+        <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <TrendUp weight="fill" className="text-teal-500 text-lg" /> Monthly ARR Renewal Comparison
+        </h3>
+        <p className="text-[10px] text-slate-400 mb-4">左柱 = 原合約結構 (透明)　右柱 = 新續約結構 (實色)　X軸 = POD 月份</p>
+        <div className="relative w-full h-[340px]">
+          <Bar data={monthlyARRData} options={partnerARROpts} />
+        </div>
+      </div>
+      )}
+
+      {/* 3. Type + Sales Stage (side by side) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Type Doughnut */}
         {chartVis.mwrType && (
         <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
           <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> 續約類型占比
+            <ChartPieSlice weight="fill" className="text-purple-500 text-lg" /> Type 占比
           </h3>
           <div className="relative w-full h-[220px]">
             <Doughnut data={typeData} options={mwrDoughnutOpts} />
@@ -1230,100 +1434,101 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
           </div>
         </div>
         )}
+      </div>
 
-        {/* Top 5 EU */}
-        {chartVis.mwrEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 (EU)
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Bar data={euData} options={hBarOpts()} />
-          </div>
-        </div>
-        )}
-
-        {/* Top 5 Partner */}
+      {/* Pair A: Top 5 Partner + Recapture Top 5 Partner */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
         {chartVis.mwrPartner && (
         <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
           <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
             <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 5 (Partner)
           </h3>
-          <div className="relative w-full h-[220px]">
+          <div className="relative w-full h-[260px]">
             <Bar data={partnerData} options={hBarOpts()} />
           </div>
         </div>
         )}
-
-        {/* Top 10 SKU */}
-        {chartVis.mwrSKU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] md:col-span-2 xl:col-span-2">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
-          </h3>
-          <div className="relative w-full h-[280px]">
-            <Bar data={skuData} options={hBarOpts()} />
-          </div>
-        </div>
-        )}
-      </div>
-
-      {/* ── Recapture Rate Rankings (2×2 grid) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
-        {chartVis.rcTopEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-green-600 text-lg" /> Recapture Top 5 (EU)
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Bar data={rcTopEUData} options={rcRankOpts(Math.max(...(rcTopEU.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
-
-        {chartVis.rcLowEU && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Buildings weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (EU)
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Bar data={rcLowEUData} options={rcRankOpts(Math.max(...(rcLowEU.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
-
         {chartVis.rcTopPartner && (
         <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
           <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
             <Handshake weight="fill" className="text-green-600 text-lg" /> Recapture Top 5 (Partner)
           </h3>
-          <div className="relative w-full h-[220px]">
+          <div className="relative w-full h-[260px]">
             <Bar data={rcTopPartnerData} options={rcRankOpts(Math.max(...(rcTopPartner.map(d => d.rate)), 100))} />
-          </div>
-        </div>
-        )}
-
-        {chartVis.rcLowPartner && (
-        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Handshake weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (Partner)
-          </h3>
-          <div className="relative w-full h-[220px]">
-            <Bar data={rcLowPartnerData} options={rcRankOpts(Math.max(...(rcLowPartner.map(d => d.rate)), 100))} />
           </div>
         </div>
         )}
       </div>
 
-      {/* ── Top 10 Partner ARR Comparison (Grouped Stacked Bar) ── */}
+      {/* Pair C: Recapture Lowest 5 Partner + Recapture Lowest 5 EU */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
+        {chartVis.rcLowPartner && (
+        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Handshake weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (Partner)
+          </h3>
+          <div className="relative w-full h-[260px]">
+            <Bar data={rcLowPartnerData} options={rcRankOpts(Math.max(...(rcLowPartner.map(d => d.rate)), 100))} />
+          </div>
+        </div>
+        )}
+        {chartVis.rcLowEU && (
+        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Buildings weight="fill" className="text-red-500 text-lg" /> Recapture Lowest 5 (EU)
+          </h3>
+          <div className="relative w-full h-[260px]">
+            <Bar data={rcLowEUData} options={rcRankOpts(Math.max(...(rcLowEU.map(d => d.rate)), 100))} />
+          </div>
+        </div>
+        )}
+      </div>
+
+      {/* Pair B: Top 5 EU + Recapture Top 5 EU */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
+        {chartVis.mwrEU && (
+        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Buildings weight="fill" className="text-blue-500 text-lg" /> Top 5 (EU)
+          </h3>
+          <div className="relative w-full h-[260px]">
+            <Bar data={euData} options={hBarOpts()} />
+          </div>
+        </div>
+        )}
+        {chartVis.rcTopEU && (
+        <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
+          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Buildings weight="fill" className="text-green-600 text-lg" /> Recapture Top 5 (EU)
+          </h3>
+          <div className="relative w-full h-[260px]">
+            <Bar data={rcTopEUData} options={rcRankOpts(Math.max(...(rcTopEU.map(d => d.rate)), 100))} />
+          </div>
+        </div>
+        )}
+      </div>
+
+      {/* ARR Renewal Comparison Top 10 (Partner) (full-width) */}
       {chartVis.mwrPartnerARR && (
       <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mt-5">
         <h3 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-          <Handshake weight="fill" className="text-indigo-500 text-lg" /> Top 10 Partner ARR 對比
+          <Handshake weight="fill" className="text-indigo-500 text-lg" /> ARR Renewal Comparison Top 10 (Partner)
         </h3>
         <p className="text-[10px] text-slate-400 mb-4">左柱 = 原合約結構 (透明)　右柱 = 今年續約結構 (實色){partnerARR.isDefaultMonth && <span className="ml-2 italic">※ 未選取預計下單日，本圖表預設顯示本月資料</span>}</p>
         <div className="relative w-full h-[340px]">
           <Bar data={partnerARRData} options={partnerARROpts} />
+        </div>
+      </div>
+      )}
+
+      {/* Top 10 SKU (full-width, last) */}
+      {chartVis.mwrSKU && (
+      <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] mt-5">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
+        </h3>
+        <div className="relative w-full h-[280px]">
+          <Bar data={skuData} options={mwrSkuBarOpts} />
         </div>
       </div>
       )}
@@ -1356,6 +1561,81 @@ function DashFilterGroup({ items, checked, onToggle }) {
           </label>
         );
       })}
+    </div>
+  );
+}
+
+// ═══════ Searchable Multi-Select (lightweight inline dropdown) ═══════
+function SearchableMultiSelect({ items, selected, onToggle, placeholder = '搜尋...', excludeMode = false }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = query
+    ? items.filter(i => i.label.toLowerCase().includes(query.toLowerCase()))
+    : items;
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Selected tags */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {selected.map(code => {
+            const item = items.find(i => i.code === code);
+            return (
+              <span
+                key={code}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${
+                  excludeMode
+                    ? 'bg-red-50 text-red-600 border border-red-200 line-through'
+                    : 'bg-brand-50 text-brand-700 border border-brand-200'
+                }`}
+                onClick={() => onToggle(code)}
+                title="點擊移除"
+              >
+                {item?.label || code} ×
+              </span>
+            );
+          })}
+        </div>
+      )}
+      {/* Search input */}
+      <input
+        type="text"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:border-brand-500 outline-none text-gray-700"
+      />
+      {/* Dropdown */}
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded shadow-lg text-xs">
+          {filtered.map(item => {
+            const isSelected = selected.includes(item.code);
+            return (
+              <div
+                key={item.code}
+                onClick={() => onToggle(item.code)}
+                className={`px-3 py-1.5 cursor-pointer transition-colors flex items-center gap-2 ${
+                  isSelected
+                    ? (excludeMode ? 'bg-red-50 text-red-600' : 'bg-brand-50 text-brand-700')
+                    : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <input type="checkbox" checked={isSelected} readOnly className="rounded-sm w-3 h-3 pointer-events-none" />
+                <span className={isSelected && excludeMode ? 'line-through' : ''}>{item.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

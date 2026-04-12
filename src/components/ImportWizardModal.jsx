@@ -370,7 +370,7 @@ export default function ImportWizardModal({ isOpen, onClose, dictionary, onImpor
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-[#faf9f8] shrink-0">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <MicrosoftExcelLogo size={20} weight="fill" className="text-green-600" />
-              引導式匯入精靈 (3 步驟無痛匯入)
+              請詳細閱讀以下匯入步驟
             </h2>
             <button
               onClick={handleClose}

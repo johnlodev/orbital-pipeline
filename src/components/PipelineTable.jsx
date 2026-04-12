@@ -1041,7 +1041,8 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
                           const RENEW_TYPES = ['原案續約', '續約增購', '降級購買', '未續約'];
                           return (dictData.reqType || []).filter(d => RENEW_TYPES.some(t => (d.label || d.code || '').includes(t)));
                         }
-                        return dictData.reqType;
+                        const RENEW_EXCL = ['續約', '降級購買', '未續約'];
+                        return (dictData.reqType || []).filter(d => !RENEW_EXCL.some(kw => (d.label || d.code || '').includes(kw)));
                       })()} checked={filterTypes} onToggle={v => toggleCheckboxFilter(v, setFilterTypes)} />
                       <FilterCheckboxGroup title="Cat." items={(dictData.product || []).filter(d => {
                         const code = d.code.toLowerCase();
