@@ -107,7 +107,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     const arr = [...prev];
     arr[idx] = { ...arr[idx], [key]: value };
     const next = arr[idx];
-    if (!isCAIP && ['quantity', 'unitPrice'].includes(key)) {
+    if (['quantity', 'unitPrice'].includes(key)) {
       next.amount = (Number(next.quantity) || 0) * (Number(next.unitPrice) || 0);
     }
     if (['originalQty', 'originalUnitPrice'].includes(key)) {
@@ -142,8 +142,8 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     setNewItems(prev => {
       const arr = [...prev];
       arr[idx] = { ...arr[idx], [key]: value };
-      // Auto-calc NTM = QTY * U/P (non-CAIP)
-      if (!isCAIP && ['quantity', 'unitPrice'].includes(key)) {
+      // Auto-calc NTM = QTY * U/P
+      if (['quantity', 'unitPrice'].includes(key)) {
         arr[idx].amount = (Number(arr[idx].quantity) || 0) * (Number(arr[idx].unitPrice) || 0);
       }
       if (['originalQty', 'originalUnitPrice'].includes(key)) {
