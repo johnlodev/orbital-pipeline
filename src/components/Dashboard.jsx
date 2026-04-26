@@ -113,7 +113,7 @@ const MWR_TYPE_ITEMS = RENEW_TYPES.map(t => ({ label: t, code: t }));
 
 // Chart definitions for visibility toggle — standard 9 + MW-R 6
 const CHART_DEFS = [
-  { id: 'trend',   label: 'Weekly Pipeline Trend' },
+  { id: 'trend',   label: 'Pipeline Trend' },
   { id: 'type',    label: '需求類型占比 (Type)' },
   { id: 'product', label: '產品金額占比 (Cat.)' },
   { id: 'stage',   label: 'Waterfall (Stage)' },
@@ -149,6 +149,33 @@ function getWeekStart(dateStr) {
   const mm = String(monday.getMonth() + 1).padStart(2, '0');
   const dd = String(monday.getDate()).padStart(2, '0');
   return `${monday.getFullYear()}/${mm}/${dd}`;
+}
+
+function getDateBucket(dateStr, granularity) {
+  if (!dateStr || dateStr === '-') return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  switch (granularity) {
+    case 'week': {
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(new Date(dateStr).setDate(diff));
+      const wm = String(monday.getMonth() + 1).padStart(2, '0');
+      const wd = String(monday.getDate()).padStart(2, '0');
+      return `${monday.getFullYear()}/${wm}/${wd}`;
+    }
+    case 'quarter': {
+      const q = Math.ceil((d.getMonth() + 1) / 3);
+      return `${yyyy}-Q${q}`;
+    }
+    case 'year':
+      return `${yyyy}`;
+    case 'month':
+    default:
+      return `${yyyy}-${mm}`;
+  }
 }
 
 function getTopN(obj, n = 5) {
@@ -280,6 +307,24 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const [expEnd, setExpEnd] = useState('');
   const [excludePartners, setExcludePartners] = useState([]);
 
+  // ── (3b) Trend granularity toggle ──
+  const [trendGranularity, setTrendGranularity] = useState('month');
+
+  // ── (3c) SKU chart local search ──
+  const [selectedChartSKUs, setSelectedChartSKUs] = useState([]);
+  const [skuSearchTerm, setSkuSearchTerm] = useState('');
+  const [skuDropdownOpen, setSkuDropdownOpen] = useState(false);
+  const skuDropdownRef = useRef(null);
+  useEffect(() => {
+    function handleClick(e) {
+      if (skuDropdownRef.current && !skuDropdownRef.current.contains(e.target)) {
+        setSkuDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   // Close chart menu on outside click
   useEffect(() => {
     function handleClick(e) {
@@ -364,6 +409,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       result = result.filter(r => expandedProducts.includes(r.product));
     }
     if (filterStages.length)   result = result.filter(r => filterStages.includes(r.stage));
+    else                       result = result.filter(r => ['L1', 'L2', 'L3', 'L4'].includes(r.stage));
     if (filterSales.length)    result = result.filter(r => filterSales.includes(r.sales));
     if (filterPMs.length)      result = result.filter(r => filterPMs.includes(r.pm));
     if (filterSegments.length)  result = result.filter(r => filterSegments.includes(r.segment));
@@ -419,7 +465,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       skuStats[row.sku || '未指定 SKU']        = (skuStats[row.sku || '未指定 SKU']      || 0) + amt;
       skuQtyStats[row.sku || '未指定 SKU']     = (skuQtyStats[row.sku || '未指定 SKU']   || 0) + qty;
 
-      const wk = getWeekStart(row.date);
+      const wk = getDateBucket(row.date, trendGranularity);
       if (wk) trendStats[wk] = (trendStats[wk] || 0) + amt;
 
       // ── Stacked trend by stage ──
@@ -434,7 +480,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
     const avgDeal = totalDeals > 0 ? Math.round(totalNTM / totalDeals) : 0;
 
     return { totalNTM, totalDeals, totalQty, avgDeal, typeStats, prodStats, stageStats, segmentStats, salesStats, pmStats, euStats, partnerStats, skuStats, skuQtyStats, trendStats, trendByStage };
-  }, [filteredData, dictData, isMWR]);
+  }, [filteredData, dictData, isMWR, trendGranularity]);
 
   // ── Shared chart option factories ──
   const doughnutOptions = {
@@ -615,16 +661,28 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
   const sortedPMKeys = Object.keys(stats.pmStats).sort((a, b) => stats.pmStats[b] - stats.pmStats[a]);
   const pmData = makeBarData(sortedPMKeys, sortedPMKeys.map(p => stats.pmStats[p]), '#059669');
 
-  // 9. SKU Top 10 (Horizontal Bar with QTY tooltip)
-  const topSKU = getTopN(stats.skuStats, 10);
-  const topSKUKeys = Object.keys(topSKU);
+  // 9. SKU Top 10 (Horizontal Bar with QTY tooltip) — respects local SKU filter
+  const skuChartStats = useMemo(() => {
+    if (selectedChartSKUs.length > 0) {
+      // Show only selected SKUs, sorted by amount desc
+      const filtered = {};
+      for (const sku of selectedChartSKUs) {
+        if (stats.skuStats[sku]) filtered[sku] = stats.skuStats[sku];
+      }
+      const sorted = Object.entries(filtered).sort((a, b) => b[1] - a[1]);
+      return { keys: sorted.map(([k]) => k), values: sorted.map(([, v]) => v) };
+    }
+    const topSKU = getTopN(stats.skuStats, 10);
+    return { keys: Object.keys(topSKU), values: Object.values(topSKU) };
+  }, [stats.skuStats, selectedChartSKUs]);
+
   const skuData = {
-    labels: topSKUKeys.length ? topSKUKeys : ['無資料'],
+    labels: skuChartStats.keys.length ? skuChartStats.keys : ['無資料'],
     datasets: [{
-      data: topSKUKeys.length ? Object.values(topSKU) : [0],
+      data: skuChartStats.keys.length ? skuChartStats.values : [0],
       backgroundColor: '#ec4899',
       borderRadius: 4, barPercentage: 0.6,
-      customQty: topSKUKeys.map(k => stats.skuQtyStats[k] || 0),
+      customQty: skuChartStats.keys.map(k => stats.skuQtyStats[k] || 0),
     }],
   };
   const skuBarOpts = {
@@ -661,7 +719,21 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
       const type = row.reqType || '';
       const amt = row.amount || 0;
       const origNtm = row.originalNtm || 0;
-      const dateStr = row.expDate || row.date || '';
+      // POD Rule: use POD (row.date) for month attribution; fallback to EXP+1 day
+      let dateStr = '';
+      if (row.date && row.date !== '-') {
+        dateStr = row.date;
+      } else if (row.expDate && row.expDate !== '-') {
+        // Add 1 day to expDate as fallback
+        const exp = new Date(row.expDate);
+        if (!isNaN(exp)) {
+          exp.setDate(exp.getDate() + 1);
+          const yy = exp.getFullYear();
+          const mm = String(exp.getMonth() + 1).padStart(2, '0');
+          const dd = String(exp.getDate()).padStart(2, '0');
+          dateStr = `${yy}-${mm}-${dd}`;
+        }
+      }
       const month = dateStr ? dateStr.substring(0, 7) : '未知';
 
       // Recapture Rate buckets
@@ -948,10 +1020,13 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
         )}
 
         {/* ── KPI Cards ── */}
+        {(() => {
+          const stageHint = filterStages.length > 0 ? filterStages.join('+') : 'L1+L2+L3+L4';
+          return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-brand-500 relative overflow-hidden">
             <CurrencyDollar weight="fill" className="text-brand-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">預估總商機 (NTM)</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">({stageHint}) 預估總商機 (NTM)</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10 flex items-baseline gap-1">
               NT$ {stats.totalNTM.toLocaleString()}
               <span className="text-xs font-medium text-gray-500 ml-1 font-mono">≈ ${Math.round(stats.totalNTM / USD_EXCHANGE_RATE).toLocaleString()} USD</span>
@@ -959,7 +1034,7 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
           </div>
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-orange-500 relative overflow-hidden">
             <Target weight="fill" className="text-orange-100 text-6xl absolute -right-2 -bottom-2 opacity-50" />
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">符合條件案件數</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 relative z-10">({stageHint}) 符合條件案件數</p>
             <p className="text-2xl font-bold text-gray-900 relative z-10">{stats.totalDeals} <span className="text-sm font-medium text-gray-400">件</span></p>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-center border-l-4 border-l-teal-500 relative overflow-hidden">
@@ -976,6 +1051,8 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
             </p>
           </div>
         </div>
+          );
+        })()}
 
         {/* ── Standard Charts (D&D sortable) ── */}
         {!isMWR && (() => {
@@ -983,9 +1060,22 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
           const STD_CHART_REGISTRY = {
             trend: (
               <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-                <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                  <TrendUp weight="fill" className="text-brand-500 text-lg" /> Weekly Pipeline Trend
-                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <TrendUp weight="fill" className="text-brand-500 text-lg" /> Pipeline Trend
+                  </h3>
+                  <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+                    {[{ key: 'week', label: '週' }, { key: 'month', label: '月' }, { key: 'quarter', label: '季' }, { key: 'year', label: '年' }].map(g => (
+                      <button
+                        key={g.key}
+                        onClick={() => setTrendGranularity(g.key)}
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all cursor-pointer ${trendGranularity === g.key ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="relative w-full h-[250px]">
                   <Line data={trendChartData} options={trendOptions} />
                 </div>
@@ -1061,19 +1151,68 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
                 </div>
               </div>
             ) : null,
-            sku: (
+            sku: (() => {
+              const allSKUs = Object.keys(stats.skuStats).sort((a, b) => stats.skuStats[b] - stats.skuStats[a]);
+              const filteredSKUOptions = skuSearchTerm
+                ? allSKUs.filter(s => s.toLowerCase().includes(skuSearchTerm.toLowerCase()))
+                : allSKUs;
+              return (
               <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)] transition-shadow duration-300 hover:shadow-[var(--shadow-soft)]">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                    <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
+                <div className="flex items-center justify-between mb-4 gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 shrink-0">
+                    <Barcode weight="fill" className="text-pink-500 text-lg" /> {selectedChartSKUs.length > 0 ? `SKU (${selectedChartSKUs.length} 項)` : 'Top 10 (SKU)'}
                   </h3>
-                  <span className="text-[10px] text-slate-400 font-normal">💡 提示：使用上方 Cat. 篩選器可快速檢視特定產品線熱銷 SKU</span>
+                  <div className="relative" ref={skuDropdownRef}>
+                    <button
+                      onClick={() => setSkuDropdownOpen(prev => !prev)}
+                      className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      <MagnifyingGlass size={12} /> 搜尋 SKU
+                    </button>
+                    {skuDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-[500px] max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                        <div className="p-2 border-b border-slate-100">
+                          <input
+                            type="text"
+                            placeholder="搜尋 SKU..."
+                            value={skuSearchTerm}
+                            onChange={e => setSkuSearchTerm(e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md outline-none focus:ring-1 focus:ring-brand-500"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto p-1">
+                          {filteredSKUOptions.length === 0 && (
+                            <div className="text-xs text-slate-400 text-center py-3">無符合項目</div>
+                          )}
+                          {filteredSKUOptions.slice(0, 50).map(sku => (
+                            <label key={sku} className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedChartSKUs.includes(sku)}
+                                onChange={() => setSelectedChartSKUs(prev => prev.includes(sku) ? prev.filter(s => s !== sku) : [...prev, sku])}
+                                className="accent-brand-500"
+                              />
+                              <span className="truncate" title={sku}>{sku}</span>
+                              <span className="ml-auto text-[10px] text-slate-400 font-mono shrink-0">NT${(stats.skuStats[sku] || 0).toLocaleString()}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {selectedChartSKUs.length > 0 && (
+                          <div className="p-2 border-t border-slate-100">
+                            <button onClick={() => { setSelectedChartSKUs([]); setSkuSearchTerm(''); }} className="w-full text-[11px] text-slate-500 hover:text-brand-600 cursor-pointer">清除篩選</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="relative w-full h-[300px]">
                   <Bar data={skuData} options={skuBarOpts} />
                 </div>
               </div>
-            ),
+              );
+            })(),
           };
           const stdVisible = stdChartOrder.filter(id => chartVis[id] && STD_CHART_REGISTRY[id]);
           return (
@@ -1115,6 +1254,17 @@ export default function Dashboard({ data, dictionary, currentUserPermissions }) 
 // ═══════ MW-R Specialized Dashboard ═══════
 function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, makeBarData, hBarOpts, doughnutOptions, ntTooltip, getTopN }) {
   const { recapture, mwrType, mwrSalesStage, mwrEU, mwrPartner, mwrSKU, mwrSKUQty, rcTopEU, rcTopPartner, lostARR_EU, lostARR_Partner } = mwrStats;
+
+  // MW-R SKU search state
+  const [mwrSelectedSKUs, setMwrSelectedSKUs] = useState([]);
+  const [mwrSkuSearchTerm, setMwrSkuSearchTerm] = useState('');
+  const [mwrSkuDropdownOpen, setMwrSkuDropdownOpen] = useState(false);
+  const mwrSkuDropdownRef = useRef(null);
+  useEffect(() => {
+    const handler = (e) => { if (mwrSkuDropdownRef.current && !mwrSkuDropdownRef.current.contains(e.target)) setMwrSkuDropdownOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Recapture Rate Chart data
   const rcLabels = recapture.length ? recapture.map(r => r.month) : ['無資料'];
@@ -1176,17 +1326,30 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
   // Supplementary charts data
   const topEU = getTopN(mwrEU, 5);
   const topPartner = getTopN(mwrPartner, 5);
-  const topSKU = getTopN(mwrSKU, 10);
   const euData = makeBarData(Object.keys(topEU), Object.values(topEU), '#3b82f6');
   const partnerData = makeBarData(Object.keys(topPartner), Object.values(topPartner), '#6366f1');
-  const topSKUKeys = Object.keys(topSKU);
+
+  // MW-R SKU chart with search filter
+  const mwrSkuChartStats = useMemo(() => {
+    if (mwrSelectedSKUs.length > 0) {
+      const filtered = {};
+      for (const sku of mwrSelectedSKUs) {
+        if (mwrSKU[sku]) filtered[sku] = mwrSKU[sku];
+      }
+      const sorted = Object.entries(filtered).sort((a, b) => b[1] - a[1]);
+      return { keys: sorted.map(([k]) => k), values: sorted.map(([, v]) => v) };
+    }
+    const topSKU = getTopN(mwrSKU, 10);
+    return { keys: Object.keys(topSKU), values: Object.values(topSKU) };
+  }, [mwrSKU, mwrSelectedSKUs, getTopN]);
+
   const skuData = {
-    labels: topSKUKeys.length ? topSKUKeys : ['無資料'],
+    labels: mwrSkuChartStats.keys.length ? mwrSkuChartStats.keys : ['無資料'],
     datasets: [{
-      data: topSKUKeys.length ? Object.values(topSKU) : [0],
+      data: mwrSkuChartStats.keys.length ? mwrSkuChartStats.values : [0],
       backgroundColor: '#ec4899',
       borderRadius: 4, barPercentage: 0.6,
-      customQty: topSKUKeys.map(k => (mwrSKUQty || {})[k] || 0),
+      customQty: mwrSkuChartStats.keys.map(k => (mwrSKUQty || {})[k] || 0),
     }],
   };
   const mwrSkuBarOpts = {
@@ -1634,16 +1797,68 @@ function MWRDashboard({ mwrStats, chartVis, filteredData, dateStart, dateEnd, ma
         </div>
       </div>
     ),
-    mwrSKU: (
+    mwrSKU: (() => {
+      const allMwrSKUs = Object.keys(mwrSKU).sort((a, b) => mwrSKU[b] - mwrSKU[a]);
+      const filteredMwrSKUOptions = mwrSkuSearchTerm
+        ? allMwrSKUs.filter(s => s.toLowerCase().includes(mwrSkuSearchTerm.toLowerCase()))
+        : allMwrSKUs;
+      return (
       <div className="bg-white rounded-2xl border border-slate-100/80 p-6 shadow-[var(--shadow-soft-sm)]">
-        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <Barcode weight="fill" className="text-pink-500 text-lg" /> Top 10 (SKU)
-        </h3>
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 shrink-0">
+            <Barcode weight="fill" className="text-pink-500 text-lg" /> {mwrSelectedSKUs.length > 0 ? `SKU (${mwrSelectedSKUs.length} 項)` : 'Top 10 (SKU)'}
+          </h3>
+          <div className="relative" ref={mwrSkuDropdownRef}>
+            <button
+              onClick={() => setMwrSkuDropdownOpen(prev => !prev)}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+            >
+              <MagnifyingGlass size={12} /> 搜尋 SKU
+            </button>
+            {mwrSkuDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 w-[500px] max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                <div className="p-2 border-b border-slate-100">
+                  <input
+                    type="text"
+                    placeholder="搜尋 SKU..."
+                    value={mwrSkuSearchTerm}
+                    onChange={e => setMwrSkuSearchTerm(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-md outline-none focus:ring-1 focus:ring-brand-500"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto p-1">
+                  {filteredMwrSKUOptions.length === 0 && (
+                    <div className="text-xs text-slate-400 text-center py-3">無符合項目</div>
+                  )}
+                  {filteredMwrSKUOptions.slice(0, 50).map(sku => (
+                    <label key={sku} className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={mwrSelectedSKUs.includes(sku)}
+                        onChange={() => setMwrSelectedSKUs(prev => prev.includes(sku) ? prev.filter(s => s !== sku) : [...prev, sku])}
+                        className="accent-brand-500"
+                      />
+                      <span className="truncate" title={sku}>{sku}</span>
+                      <span className="ml-auto text-[10px] text-slate-400 font-mono shrink-0">NT${(mwrSKU[sku] || 0).toLocaleString()}</span>
+                    </label>
+                  ))}
+                </div>
+                {mwrSelectedSKUs.length > 0 && (
+                  <div className="p-2 border-t border-slate-100">
+                    <button onClick={() => { setMwrSelectedSKUs([]); setMwrSkuSearchTerm(''); }} className="w-full text-[11px] text-slate-500 hover:text-brand-600 cursor-pointer">清除篩選</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         <div className="relative w-full h-[280px]">
           <Bar data={skuData} options={mwrSkuBarOpts} />
         </div>
       </div>
-    ),
+      );
+    })(),
   };
 
   // Filter visible charts and render via drag-sortable array

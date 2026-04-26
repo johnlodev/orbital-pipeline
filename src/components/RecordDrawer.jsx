@@ -99,6 +99,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     }
   }, [editingRecord]);
 
+  /* ── CAIP month-key mapping for auto-fill ── */
+  const MONTH_KEY_MAP = { '01': 'jan', '02': 'feb', '03': 'mar', '04': 'apr', '05': 'may', '06': 'jun', '07': 'jul', '08': 'aug', '09': 'sep', '10': 'oct', '11': 'nov', '12': 'dec' };
+
   /* ── 千分位 helpers ── */
   const fmtNum = v => (v ? Number(v).toLocaleString() : '');
   const parseNum = str => Number(String(str).replace(/,/g, '')) || 0;
@@ -107,8 +110,43 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     const arr = [...prev];
     arr[idx] = { ...arr[idx], [key]: value };
     const next = arr[idx];
+    // CAIP: acr_start_month changed → populate new target month with current acr_mom
+    if (isCAIP && key === 'acr_start_month') {
+      const acrVal = Number(next.acr_mom) || 0;
+      if (value && acrVal) {
+        const mm = value.substring(5, 7);
+        const monthKey = MONTH_KEY_MAP[mm];
+        if (monthKey) {
+          next[monthKey] = acrVal;
+          const q1 = (Number(next.jul)||0)+(Number(next.aug)||0)+(Number(next.sep)||0);
+          const q2 = (Number(next.oct)||0)+(Number(next.nov)||0)+(Number(next.dec)||0);
+          const q3 = (Number(next.jan)||0)+(Number(next.feb)||0)+(Number(next.mar)||0);
+          const q4 = (Number(next.apr)||0)+(Number(next.may)||0)+(Number(next.jun)||0);
+          next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
+          next.amount = q1 + q2 + q3 + q4;
+        }
+      }
+    }
     if (['quantity', 'unitPrice'].includes(key)) {
-      next.amount = (Number(next.quantity) || 0) * (Number(next.unitPrice) || 0);
+      const newNtm = (Number(next.quantity) || 0) * (Number(next.unitPrice) || 0);
+      next.amount = newNtm;
+      // CAIP: NTM → acr_mom → target month → quarterly sums
+      if (isCAIP) {
+        next.acr_mom = newNtm;
+        if (next.acr_start_month) {
+          const mm = next.acr_start_month.substring(5, 7);
+          const monthKey = MONTH_KEY_MAP[mm];
+          if (monthKey) {
+            next[monthKey] = newNtm;
+            const q1 = (Number(next.jul)||0)+(Number(next.aug)||0)+(Number(next.sep)||0);
+            const q2 = (Number(next.oct)||0)+(Number(next.nov)||0)+(Number(next.dec)||0);
+            const q3 = (Number(next.jan)||0)+(Number(next.feb)||0)+(Number(next.mar)||0);
+            const q4 = (Number(next.apr)||0)+(Number(next.may)||0)+(Number(next.jun)||0);
+            next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
+            next.amount = q1 + q2 + q3 + q4;
+          }
+        }
+      }
     }
     if (['originalQty', 'originalUnitPrice'].includes(key)) {
       next.originalNtm = (Number(next.originalQty) || 0) * (Number(next.originalUnitPrice) || 0);
@@ -142,9 +180,44 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     setNewItems(prev => {
       const arr = [...prev];
       arr[idx] = { ...arr[idx], [key]: value };
+      // CAIP: acr_start_month changed → populate new target month with current acr_mom
+      if (isCAIP && key === 'acr_start_month') {
+        const acrVal = Number(arr[idx].acr_mom) || 0;
+        if (value && acrVal) {
+          const mm = value.substring(5, 7);
+          const monthKey = MONTH_KEY_MAP[mm];
+          if (monthKey) {
+            arr[idx][monthKey] = acrVal;
+            const q1 = (Number(arr[idx].jul)||0)+(Number(arr[idx].aug)||0)+(Number(arr[idx].sep)||0);
+            const q2 = (Number(arr[idx].oct)||0)+(Number(arr[idx].nov)||0)+(Number(arr[idx].dec)||0);
+            const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
+            const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
+            arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
+            arr[idx].amount = q1+q2+q3+q4;
+          }
+        }
+      }
       // Auto-calc NTM = QTY * U/P
       if (['quantity', 'unitPrice'].includes(key)) {
-        arr[idx].amount = (Number(arr[idx].quantity) || 0) * (Number(arr[idx].unitPrice) || 0);
+        const newNtm = (Number(arr[idx].quantity) || 0) * (Number(arr[idx].unitPrice) || 0);
+        arr[idx].amount = newNtm;
+        // CAIP: NTM → acr_mom → target month → quarterly sums
+        if (isCAIP) {
+          arr[idx].acr_mom = newNtm;
+          if (arr[idx].acr_start_month) {
+            const mm = arr[idx].acr_start_month.substring(5, 7);
+            const monthKey = MONTH_KEY_MAP[mm];
+            if (monthKey) {
+              arr[idx][monthKey] = newNtm;
+              const q1 = (Number(arr[idx].jul)||0)+(Number(arr[idx].aug)||0)+(Number(arr[idx].sep)||0);
+              const q2 = (Number(arr[idx].oct)||0)+(Number(arr[idx].nov)||0)+(Number(arr[idx].dec)||0);
+              const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
+              const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
+              arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
+              arr[idx].amount = q1+q2+q3+q4;
+            }
+          }
+        }
       }
       if (['originalQty', 'originalUnitPrice'].includes(key)) {
         arr[idx].originalNtm = (Number(arr[idx].originalQty) || 0) * (Number(arr[idx].originalUnitPrice) || 0);
@@ -205,12 +278,26 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     ];
     if (isCAIP) {
       required.push({ key: 'segment', label: 'Segment' });
+      required.push({ key: 'acr_start_month', label: 'ACR Start Month' });
+      required.push({ key: 'acr_mom', label: 'ACR/Month' });
+    }
+    if (isCAIP || isRenew) {
+      required.push({ key: 'segment', label: 'Segment' });
+      required.push({ key: 'sales_stage', label: 'Sales Stage' });
     }
     const missing = required.filter(f => {
       const v = rec[f.key];
+      // For numeric CAIP fields, also reject 0 as empty
+      if (f.key === 'acr_mom') return !v || v === 0;
       return v === '' || v === null || v === undefined;
     });
-    return missing;
+    // Deduplicate (segment may appear twice for CAIP)
+    const seen = new Set();
+    return missing.filter(f => {
+      if (seen.has(f.key)) return false;
+      seen.add(f.key);
+      return true;
+    });
   }
 
   function handleSave() {
@@ -221,6 +308,14 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         if (missing.length > 0) {
           toast.error(`品項 #${i + 1} 缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
           return;
+        }
+        // AIBS_RENEW: validate original contract fields
+        if (isRenew) {
+          const item = editItems[i];
+          if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+            toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
+            return;
+          }
         }
       }
       const records = editItems.map(item => {
@@ -259,6 +354,14 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         if (missing.length > 0) {
           toast.error(`品項 #${i + 1} 缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
           return;
+        }
+        // AIBS_RENEW: validate original contract fields
+        if (isRenew) {
+          const item = items[i];
+          if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+            toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
+            return;
+          }
         }
       }
       // Merge and send
@@ -304,6 +407,14 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       if (missing.length > 0) {
         toast.error(`品項 #${i + 1} 缺少必填欄位：${missing.map(f => f.label).join(', ')}`);
         return;
+      }
+      // AIBS_RENEW: validate original contract fields
+      if (isRenew) {
+        const item = newItems[i];
+        if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+          toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
+          return;
+        }
       }
     }
     // Merge and send
@@ -499,31 +610,31 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 <input type="date" className={inputCls} value={data.expDate} onChange={(e) => setter('expDate', e.target.value)} />
               </div>
               <div>
-                <label className={labelCls}>原 SKU</label>
+                <label className={labelCls}>原 SKU <span className="text-red-500">*</span></label>
                 <input type="text" className={inputCls} placeholder="請輸入舊有合約 SKU" value={data.originalSku} onChange={(e) => setter('originalSku', e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className={labelCls}>原 QTY</label>
+                <label className={labelCls}>原 QTY <span className="text-red-500">*</span></label>
                 <input type="text" inputMode="decimal" className={inputCls} placeholder="0" value={fmtNum(data.originalQty)} onChange={(e) => setter('originalQty', parseNum(e.target.value))} />
               </div>
               <div>
-                <label className={labelCls}>原 U/P</label>
+                <label className={labelCls}>原 U/P <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 text-sm font-medium">$</span>
+                    <span className="text-gray-500 text-sm font-medium">NT$</span>
                   </div>
-                  <input type="text" inputMode="decimal" className={`${inputCls} pl-6 font-mono`} placeholder="0" value={fmtNum(data.originalUnitPrice)} onChange={(e) => setter('originalUnitPrice', parseNum(e.target.value))} />
+                  <input type="text" inputMode="decimal" className={`${inputCls} pl-[3.25rem] font-mono`} placeholder="0" value={fmtNum(data.originalUnitPrice)} onChange={(e) => setter('originalUnitPrice', parseNum(e.target.value))} />
                 </div>
               </div>
               <div>
-                <label className={labelCls}>原 NTM</label>
+                <label className={labelCls}>原NTM <span className="text-gray-400 text-[10px] ml-1">(此欄位自動計算)</span></label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 text-sm font-medium">$</span>
+                    <span className="text-gray-500 text-sm font-medium">NT$</span>
                   </div>
-                  <input type="text" readOnly className={`${inputCls} pl-6 font-mono bg-slate-100 cursor-default`} value={fmtNum(data.originalNtm)} />
+                  <input type="text" readOnly className={`${inputCls} pl-[3.25rem] font-mono bg-slate-100 cursor-default`} value={fmtNum(data.originalNtm)} />
                 </div>
               </div>
             </div>
@@ -578,7 +689,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                 type="text"
                 inputMode="decimal"
                 className={`${inputCls} pl-[3.25rem] font-mono`}
-                placeholder="0"
+                placeholder={isCAIP ? '請確實填入ACR/月' : '0'}
                 value={fmtNum(data.unitPrice)}
                 onChange={(e) => setter('unitPrice', parseNum(e.target.value))}
               />
@@ -657,10 +768,10 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     const salesStageOptions = dictData?.salesStage || dictData?.['Sales Stage'] || dictData?.sales_stage || [];
     return (
       <div className="border-t border-gray-200 mt-2 pt-4">
-        <div className="text-[11px] font-semibold text-brand-600 uppercase tracking-wider mb-3">擴充欄位</div>
+        <div className="text-[11px] font-semibold text-brand-600 uppercase tracking-wider mb-3">其他欄位</div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <div>
-            <label className={labelCls}>Segment {isCAIP && <span className="text-red-500">*</span>}</label>
+            <label className={labelCls}>Segment <span className="text-red-500">*</span></label>
             <select
               className={inputCls}
               value={data.segment}
@@ -673,7 +784,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             </select>
           </div>
           <div>
-            <label className={labelCls}>Sales Stage</label>
+            <label className={labelCls}>Sales Stage <span className="text-red-500">*</span></label>
             <select
               className={`${inputCls} ${data.sales_stage ? getBadgeStyle(data.sales_stage) : ''}`}
               value={data.sales_stage}
@@ -699,7 +810,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
     if (!isCAIP) return null;
     return (
       <div className="border-t border-gray-200 mt-2 pt-4">
-        <div className="text-[11px] font-semibold text-brand-600 uppercase tracking-wider mb-3">CAIP 擴充欄位</div>
+        <div className="text-[11px] font-semibold text-brand-600 uppercase tracking-wider mb-3">CAIP 附加欄位</div>
 
         {/* Disti / ACR Start Month / ACR MoM */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
@@ -708,16 +819,16 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             <input type="text" className={inputCls} value={data.disti_name} onChange={(e) => setter('disti_name', e.target.value)} />
           </div>
           <div>
-            <label className={labelCls}>ACR Start Month</label>
+            <label className={labelCls}>ACR Start Month <span className="text-red-500">*</span></label>
             <input type="month" className={inputCls} value={data.acr_start_month} onChange={(e) => setter('acr_start_month', e.target.value)} />
           </div>
           <div>
-            <label className={labelCls}>ACR/Month</label>
+            <label className={labelCls}>ACR/Month <span className="text-red-500">*</span></label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <span className="text-gray-500 text-sm font-medium">$</span>
+                <span className="text-gray-500 text-sm font-medium">NT$</span>
               </div>
-              <input type="text" inputMode="decimal" className={`${inputCls} pl-7 font-mono`} value={fmtNum(data.acr_mom)} onChange={(e) => setter('acr_mom', parseNum(e.target.value))} />
+              <input type="text" readOnly className={`${inputCls} pl-[3.25rem] font-mono bg-gray-100 cursor-not-allowed`} value={fmtNum(data.acr_mom)} placeholder="自動帶入 NTM" />
             </div>
           </div>
         </div>
@@ -730,9 +841,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               <label className={labelCls}>{CAIP_LABELS[m]}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                  <span className="text-gray-400 text-xs font-medium">$</span>
+                  <span className="text-gray-400 text-xs font-medium">NT$</span>
                 </div>
-                <input type="text" inputMode="decimal" className={`${inputCls} pl-6 font-mono`} value={fmtNum(data[m])} onChange={(e) => setter(m, parseNum(e.target.value))} />
+                <input type="text" inputMode="decimal" className={`${inputCls} pl-9 font-mono`} value={fmtNum(data[m])} onChange={(e) => setter(m, parseNum(e.target.value))} />
               </div>
             </div>
           ))}
@@ -744,9 +855,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               <label className={labelCls}>{CAIP_LABELS[m]}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                  <span className="text-gray-400 text-xs font-medium">$</span>
+                  <span className="text-gray-400 text-xs font-medium">NT$</span>
                 </div>
-                <input type="text" inputMode="decimal" className={`${inputCls} pl-6 font-mono`} value={fmtNum(data[m])} onChange={(e) => setter(m, parseNum(e.target.value))} />
+                <input type="text" inputMode="decimal" className={`${inputCls} pl-9 font-mono`} value={fmtNum(data[m])} onChange={(e) => setter(m, parseNum(e.target.value))} />
               </div>
             </div>
           ))}
@@ -760,9 +871,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               <label className={labelCls}>{CAIP_LABELS[q]}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                  <span className="text-gray-400 text-xs font-medium">$</span>
+                  <span className="text-gray-400 text-xs font-medium">NT$</span>
                 </div>
-                <input type="text" className={`${inputCls} pl-6 bg-gray-50 font-mono`} value={fmtNum(data[q])} readOnly />
+                <input type="text" className={`${inputCls} pl-9 bg-gray-50 font-mono`} value={fmtNum(data[q])} readOnly />
               </div>
             </div>
           ))}
@@ -848,10 +959,10 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                   )}
 
                   {/* Notes */}
-                  <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
+                  <div className="border-t border-gray-100 my-2 pt-4">
                     <label className={labelCls}>Notes</label>
                     <textarea
-                      className="w-full flex-1 min-h-[80px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                      className="block w-full min-h-[100px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-y"
                       placeholder="請輸入詳細進度與備註..."
                       value={item.notes}
                       onChange={(e) => set(idx, 'notes', e.target.value)}
@@ -913,10 +1024,10 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
                   )}
 
                   {/* Notes */}
-                  <div className="border-t border-gray-100 my-2 pt-4 flex-1 flex flex-col">
+                  <div className="border-t border-gray-100 my-2 pt-4">
                     <label className={labelCls}>Notes</label>
                     <textarea
-                      className="w-full flex-1 min-h-[80px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                      className="block w-full min-h-[100px] border border-brand-300 bg-brand-50/30 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-y"
                       placeholder="請輸入詳細進度與備註..."
                       value={item.notes}
                       onChange={(e) => setNewItem(idx, 'notes', e.target.value)}

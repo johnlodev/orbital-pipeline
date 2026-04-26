@@ -34,7 +34,7 @@ const SHARED_COLUMNS = [
   { id: 'quantity', label: 'QTY',      align: 'right', width: 110,  isCustom: false },
   { id: 'unitPrice',label: 'U/P',      align: 'right', width: 130, isCustom: false },
   { id: 'amount',   label: 'NTM',      align: 'right', width: 170, isCustom: false },
-  { id: 'date',     label: 'POD',      align: 'left',  width: 120, isCustom: false },
+  { id: 'date',     label: 'POD',      align: 'left',  width: 160, isCustom: false },
   { id: 'stage',    label: 'Stage',    align: 'left',  width: 90,  isCustom: false },
   { id: 'notes',    label: 'Notes',    align: 'left',  width: 200, isCustom: false },
   { id: 'lud',      label: 'LUD',      align: 'left',  width: 120, isCustom: false },
@@ -84,11 +84,28 @@ const DEFAULT_VISIBLE = Object.fromEntries(SHARED_COLUMNS.map(c => [c.id, true])
 const DEFAULT_RENEW_VISIBLE = Object.fromEntries(
   [...SHARED_COLUMNS, ...RENEW_EXTRA_COLUMNS].map(c => [c.id, true])
 );
-const INITIAL_TABS = [
-  { id: 'tab_all', name: '全部', removable: false },
-  { id: 'tab_new', name: '新購', removable: true },
-  { id: 'tab_add', name: '增購', removable: true },
-];
+const DEFAULT_TABS_MAP = {
+  AIBS: [
+    { id: 'tab_all', name: '全部', removable: false },
+    { id: 'tab_new', name: '新購', removable: true },
+    { id: 'tab_add', name: '增購', removable: true },
+    { id: 'tab_transfer', name: '移轉', removable: true },
+  ],
+  CAIP: [
+    { id: 'tab_all', name: '全部', removable: false },
+    { id: 'tab_new', name: '新購', removable: true },
+    { id: 'tab_add', name: '增購', removable: true },
+    { id: 'tab_transfer', name: '移轉', removable: true },
+  ],
+  AIBS_RENEW: [
+    { id: 'tab_all', name: '全部', removable: false },
+    { id: 'tab_renew', name: '原案續約', removable: true },
+    { id: 'tab_renew_add', name: '續約增購', removable: true },
+    { id: 'tab_downgrade', name: '降級購買', removable: true },
+    { id: 'tab_not_renew', name: '未續約', removable: true },
+  ],
+};
+const getDefaultTabs = (mode) => DEFAULT_TABS_MAP[mode] || DEFAULT_TABS_MAP.AIBS;
 const PAGE_SIZE_OPTIONS = [7, 15, 30, 0]; // 0 = 全部
 
 // ===================================================================
@@ -303,15 +320,15 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       const saved = localStorage.getItem(tabsStorageKey);
       if (saved) return JSON.parse(saved);
     } catch {}
-    return INITIAL_TABS;
+    return getDefaultTabs(viewMode);
   });
   // Sync tabs from localStorage when viewMode changes
   useEffect(() => {
     try {
       const saved = localStorage.getItem(tabsStorageKey);
       if (saved) { setTabs(JSON.parse(saved)); }
-      else { setTabs(INITIAL_TABS); }
-    } catch { setTabs(INITIAL_TABS); }
+      else { setTabs(getDefaultTabs(viewMode)); }
+    } catch { setTabs(getDefaultTabs(viewMode)); }
   }, [tabsStorageKey]);
   // Persist tabs to localStorage on change
   useEffect(() => {
@@ -479,6 +496,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     if (filterTypes.length > 0) result = result.filter(r => filterTypes.includes(r.reqType));
     if (filterProducts.length > 0) result = result.filter(r => filterProducts.includes(r.product));
     if (filterStages.length > 0) result = result.filter(r => filterStages.includes(r.stage));
+    else result = result.filter(r => ['L1', 'L2', 'L3', 'L4'].includes(r.stage));
     if (filterPMs.length > 0) result = result.filter(r => filterPMs.includes(r.pm));
     if (filterSegments.length > 0) result = result.filter(r => filterSegments.includes(r.segment));
     if (filterDateStart) result = result.filter(r => r.date >= filterDateStart);
@@ -782,8 +800,31 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       }
       case 'product':
         return <ProductBadge code={row[colKey]} label={getNameFromDict('product', row[colKey])} />;
-      case 'stage':
-        return <StageBadge stage={row[colKey]} label={getNameFromDict('stage', row[colKey])} />;
+      case 'stage': {
+        const stageLabel = getNameFromDict('stage', row.stage);
+        const STAGE_COLOR_MAP = {
+          'L1': 'bg-slate-50 text-slate-600 border-slate-200',
+          'L2': 'bg-yellow-50 text-yellow-700 border-yellow-200',
+          'L3': 'bg-orange-50 text-orange-700 border-orange-200',
+          'L4': 'bg-green-50 text-green-700 border-green-200',
+        };
+        const stageCls = STAGE_COLOR_MAP[row.stage] || 'bg-slate-50 text-slate-600 border-slate-200';
+        return (
+          <div className="group/stage relative inline-flex items-center">
+            <select
+              value={row.stage || ''}
+              onChange={e => onUpdateRecord?.(row.id, 'stage', e.target.value)}
+              className={`appearance-none cursor-pointer px-2.5 py-1 pr-6 rounded-md text-[11px] font-medium ring-1 ring-inset outline-none bg-transparent hover:bg-slate-50 focus:ring-2 focus:ring-brand-500/30 focus:bg-white transition-colors duration-200 ${stageCls}`}
+              title="點擊切換 Stage"
+            >
+              {(dictData.stage || []).map(opt => (
+                <option key={opt.code} value={opt.code}>{opt.label}</option>
+              ))}
+            </select>
+            <CaretDown size={10} weight="fill" className="absolute right-1 pointer-events-none opacity-0 group-hover/stage:opacity-60 transition-opacity" />
+          </div>
+        );
+      }
       case 'unitPrice':
         return <span className="w-full text-right text-sm font-medium text-slate-500 tabular-nums font-mono">{row.unitPrice != null && row.unitPrice !== 0 ? `NT$ ${Number(row.unitPrice).toLocaleString()}` : '-'}</span>;
       case 'quantity': {
@@ -843,7 +884,15 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
       case 'pm':
         return <span className="text-sm font-medium text-slate-800">{getNameFromDict('pm', row.pm)}</span>;
       case 'date':
-        return <span className="text-slate-500 tabular-nums">{row.date}</span>;
+        return (
+          <input
+            type="date"
+            value={row.date || ''}
+            onChange={e => onUpdateRecord?.(row.id, 'date', e.target.value)}
+            className="w-full bg-transparent border-none outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 text-sm text-slate-500 tabular-nums appearance-none cursor-pointer"
+            title="點擊修改 POD"
+          />
+        );
       case 'expDate':
         return <span className="text-slate-500 tabular-nums">{row.expDate || '-'}</span>;
       case 'sku': {
@@ -956,7 +1005,7 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
             </button>
             <div className="h-8 w-px bg-gray-200 mx-2 hidden lg:block" />
             <div className="text-right hidden lg:block">
-              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">預估商機總額{selectedCount > 0 && <span className="text-brand-600 normal-case tracking-normal ml-1">(已選 {selectedCount} 筆)</span>}</p>
+              <p className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase mb-0.5">({filterStages.length > 0 ? filterStages.join('+') : 'L1+L2+L3+L4'}) 預估商機總額{selectedCount > 0 && <span className="text-brand-600 normal-case tracking-normal ml-1">(已選 {selectedCount} 筆)</span>}</p>
               <div className="flex flex-col items-end">
                 <p className="text-lg font-bold text-brand-600 leading-none">
                   NT$ {totalAmount.toLocaleString()} <span className="text-xs font-medium text-gray-500 ml-0.5">TWD</span>
