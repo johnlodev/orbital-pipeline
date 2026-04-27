@@ -69,6 +69,7 @@ const CAIP_EXTRA_COLUMNS = [
 ];
 
 const CAIP_NUM_IDS = new Set(['acr_mom','jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','q1','q2','q3','q4']);
+const CAIP_MONTH_IDS = new Set(['jul','aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun']);
 
 // AIBS Renew-only extra columns
 const RENEW_EXTRA_COLUMNS = [
@@ -322,13 +323,34 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
     } catch {}
     return getDefaultTabs(viewMode);
   });
-  // Sync tabs from localStorage when viewMode changes
+  // Sync tabs from localStorage when viewMode changes (with corruption detection)
   useEffect(() => {
+    const correctDefaults = getDefaultTabs(viewMode);
     try {
       const saved = localStorage.getItem(tabsStorageKey);
-      if (saved) { setTabs(JSON.parse(saved)); }
-      else { setTabs(getDefaultTabs(viewMode)); }
-    } catch { setTabs(getDefaultTabs(viewMode)); }
+      if (saved) {
+        const parsedTabs = JSON.parse(saved);
+        // Corruption check: Renew tabs in non-Renew view or vice versa
+        const RENEW_NAMES = ['原案續約', '續約增購', '降級購買', '未續約'];
+        const STD_NAMES = ['新購', '增購', '移轉'];
+        const isCorrupted = isRenew
+          ? parsedTabs.some(t => STD_NAMES.includes(t.name) && !RENEW_NAMES.includes(t.name))
+          : parsedTabs.some(t => RENEW_NAMES.includes(t.name));
+        if (isCorrupted) {
+          setTabs(correctDefaults);
+          localStorage.setItem(tabsStorageKey, JSON.stringify(correctDefaults));
+        } else {
+          setTabs(parsedTabs);
+        }
+      } else {
+        setTabs(correctDefaults);
+        localStorage.setItem(tabsStorageKey, JSON.stringify(correctDefaults));
+      }
+    } catch {
+      setTabs(correctDefaults);
+      localStorage.setItem(tabsStorageKey, JSON.stringify(correctDefaults));
+    }
+    setActiveTab('全部');
   }, [tabsStorageKey]);
   // Persist tabs to localStorage on change
   useEffect(() => {
@@ -910,14 +932,59 @@ export default function PipelineTable({ data, onDelete, onBatchDelete, onOpenDra
           </div>
         );
       }
-      case 'sales_stage':
-        return row.sales_stage ? <DynamicBadge code={row.sales_stage} /> : <span className="text-slate-400">-</span>;
+      case 'sales_stage': {
+        const salesStageOptions = dictData?.salesStage || dictData?.['Sales Stage'] || dictData?.sales_stage || [];
+        const SS_COLOR_MAP = {
+          'Won': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          'Commit': 'bg-blue-50 text-blue-700 border-blue-200',
+          'Pipe': 'bg-amber-50 text-amber-700 border-amber-200',
+          'Lost': 'bg-red-50 text-red-700 border-red-200',
+        };
+        const ssLabel = row.sales_stage || '';
+        const ssCls = SS_COLOR_MAP[ssLabel] || 'bg-slate-50 text-slate-600 border-slate-200';
+        return (
+          <div className="group/ss relative inline-flex items-center">
+            <select
+              value={row.sales_stage || ''}
+              onChange={e => onUpdateRecord?.(row.id, 'sales_stage', e.target.value)}
+              className={`appearance-none cursor-pointer px-2.5 py-1 pr-6 rounded-md text-[11px] font-medium ring-1 ring-inset outline-none bg-transparent hover:bg-slate-50 focus:ring-2 focus:ring-brand-500/30 focus:bg-white transition-colors duration-200 ${ssCls}`}
+              title="點擊切換 Sales Stage"
+            >
+              <option value="">-</option>
+              {salesStageOptions.map(opt => (
+                <option key={opt.code} value={opt.code}>{opt.label}</option>
+              ))}
+            </select>
+            <CaretDown size={10} weight="fill" className="absolute right-1 pointer-events-none opacity-0 group-hover/ss:opacity-60 transition-opacity" />
+          </div>
+        );
+      }
       case 'segment':
         return row.segment ? <DynamicBadge code={row.segment} /> : <span className="text-slate-400">-</span>;
       case 'lud':
         return <span className="text-slate-500 tabular-nums text-xs">{row.lud || '-'}</span>;
       default:
-        // CAIP numeric fields: formatted numbers
+        // CAIP 12-month inline edit (onBlur to avoid focus loss)
+        if (isCAIP && CAIP_MONTH_IDS.has(colKey)) {
+          return (
+            <input
+              type="text"
+              inputMode="decimal"
+              defaultValue={row[colKey] != null && row[colKey] !== 0 ? Number(row[colKey]).toLocaleString() : ''}
+              key={`${row.id}-${colKey}-${row[colKey]}`}
+              onBlur={(e) => {
+                const raw = e.target.value.replace(/,/g, '');
+                const parsed = raw === '' ? 0 : Number(raw) || 0;
+                if (parsed !== (Number(row[colKey]) || 0)) {
+                  onUpdateRecord?.(row.id, colKey, parsed);
+                }
+              }}
+              className="w-full bg-transparent border-none outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 text-right text-sm font-mono text-slate-600 tabular-nums"
+              title={`編輯 ${colKey.toUpperCase()}`}
+            />
+          );
+        }
+        // CAIP numeric fields: formatted numbers (read-only for q1-q4, acr_mom)
         if (CAIP_NUM_IDS.has(colKey)) {
           const val = row[colKey];
           return <span className="w-full text-right font-mono text-slate-600 tabular-nums">{val != null && val !== 0 ? Number(val).toLocaleString() : '-'}</span>;

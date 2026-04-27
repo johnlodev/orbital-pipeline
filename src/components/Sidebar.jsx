@@ -24,7 +24,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ currentView, setCurrentView, onOpenSettings, session, isSuperAdmin, isMobileOpen = false, onMobileClose }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [showChangePw, setShowChangePw] = useState(false);
   const [pwForm, setPwForm] = useState({ oldPw: '', newPw: '', confirmPw: '' });
   const [pwLoading, setPwLoading] = useState(false);

@@ -103,7 +103,7 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
   const MONTH_KEY_MAP = { '01': 'jan', '02': 'feb', '03': 'mar', '04': 'apr', '05': 'may', '06': 'jun', '07': 'jul', '08': 'aug', '09': 'sep', '10': 'oct', '11': 'nov', '12': 'dec' };
 
   /* ── 千分位 helpers ── */
-  const fmtNum = v => (v ? Number(v).toLocaleString() : '');
+  const fmtNum = v => (v !== null && v !== undefined && v !== '' ? Number(v).toLocaleString() : '');
   const parseNum = str => Number(String(str).replace(/,/g, '')) || 0;
 
   const set = (idx, key, value) => setEditItems(prev => {
@@ -123,7 +123,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
           const q3 = (Number(next.jan)||0)+(Number(next.feb)||0)+(Number(next.mar)||0);
           const q4 = (Number(next.apr)||0)+(Number(next.may)||0)+(Number(next.jun)||0);
           next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
-          next.amount = q1 + q2 + q3 + q4;
         }
       }
     }
@@ -143,7 +142,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             const q3 = (Number(next.jan)||0)+(Number(next.feb)||0)+(Number(next.mar)||0);
             const q4 = (Number(next.apr)||0)+(Number(next.may)||0)+(Number(next.jun)||0);
             next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
-            next.amount = q1 + q2 + q3 + q4;
           }
         }
       }
@@ -170,7 +168,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       const q3 = (Number(next.jan)||0)+(Number(next.feb)||0)+(Number(next.mar)||0);
       const q4 = (Number(next.apr)||0)+(Number(next.may)||0)+(Number(next.jun)||0);
       next.q1 = q1; next.q2 = q2; next.q3 = q3; next.q4 = q4;
-      next.amount = q1 + q2 + q3 + q4;
     }
     arr[idx] = next;
     return arr;
@@ -193,7 +190,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
             const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
             const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
             arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
-            arr[idx].amount = q1+q2+q3+q4;
           }
         }
       }
@@ -214,7 +210,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
               const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
               const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
               arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
-              arr[idx].amount = q1+q2+q3+q4;
             }
           }
         }
@@ -242,7 +237,6 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         const q3 = (Number(arr[idx].jan)||0)+(Number(arr[idx].feb)||0)+(Number(arr[idx].mar)||0);
         const q4 = (Number(arr[idx].apr)||0)+(Number(arr[idx].may)||0)+(Number(arr[idx].jun)||0);
         arr[idx].q1 = q1; arr[idx].q2 = q2; arr[idx].q3 = q3; arr[idx].q4 = q4;
-        arr[idx].amount = q1+q2+q3+q4;
       }
       return arr;
     });
@@ -312,7 +306,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         // AIBS_RENEW: validate original contract fields
         if (isRenew) {
           const item = editItems[i];
-          if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+          const isOriginalQtyEmpty = item.originalQty === '' || item.originalQty === null || item.originalQty === undefined;
+          const isOriginalUPEmpty = item.originalUnitPrice === '' || item.originalUnitPrice === null || item.originalUnitPrice === undefined;
+          if (!item.originalSku || isOriginalQtyEmpty || isOriginalUPEmpty) {
             toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
             return;
           }
@@ -358,7 +354,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
         // AIBS_RENEW: validate original contract fields
         if (isRenew) {
           const item = items[i];
-          if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+          const isOriginalQtyEmpty = item.originalQty === '' || item.originalQty === null || item.originalQty === undefined;
+          const isOriginalUPEmpty = item.originalUnitPrice === '' || item.originalUnitPrice === null || item.originalUnitPrice === undefined;
+          if (!item.originalSku || isOriginalQtyEmpty || isOriginalUPEmpty) {
             toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
             return;
           }
@@ -411,7 +409,9 @@ export default function RecordDrawer({ isOpen, onClose, onSave, onDelete, editin
       // AIBS_RENEW: validate original contract fields
       if (isRenew) {
         const item = newItems[i];
-        if (!item.originalSku || (!item.originalQty && item.originalQty !== 0) || !item.originalUnitPrice) {
+        const isOriginalQtyEmpty = item.originalQty === '' || item.originalQty === null || item.originalQty === undefined;
+        const isOriginalUPEmpty = item.originalUnitPrice === '' || item.originalUnitPrice === null || item.originalUnitPrice === undefined;
+        if (!item.originalSku || isOriginalQtyEmpty || isOriginalUPEmpty) {
           toast.error('請完整填寫原合約的 SKU、QTY 與 U/P 資訊');
           return;
         }
